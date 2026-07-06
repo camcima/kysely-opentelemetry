@@ -1,10 +1,5 @@
 import type { Attributes } from '@opentelemetry/api';
-
-/** Replaced by `import type { QueryContext } from './analysis/analyze.js'` in Task 10. */
-export interface QueryContextLike {
-  readonly sql: string;
-  readonly parameters: ReadonlyArray<unknown>;
-}
+import type { QueryContext } from './analysis/analyze.js';
 
 export interface KyselyOtelOptions {
   /** Kill switch. When false, observeDialect returns the dialect untouched. Default true. */
@@ -26,7 +21,7 @@ export interface KyselyOtelOptions {
   /** span.recordException on query failure. Default true. */
   recordExceptions?: boolean;
   /** Custom attributes hook. Failures are swallowed. Cardinality/PII is the caller's responsibility. */
-  attributes?: (ctx: QueryContextLike) => Attributes;
+  attributes?: (ctx: QueryContext) => Attributes;
   /** Extra query-text scrubbing, runs last in all emitting modes. Throwing omits db.query.text. */
   redact?: (sql: string) => string;
 }
@@ -43,7 +38,7 @@ export interface NormalizedOptions {
   readonly metrics: boolean;
   readonly transactions: boolean;
   readonly recordExceptions: boolean;
-  readonly attributes?: (ctx: QueryContextLike) => Attributes;
+  readonly attributes?: (ctx: QueryContext) => Attributes;
   readonly redact?: (sql: string) => string;
 }
 
