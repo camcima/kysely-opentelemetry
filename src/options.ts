@@ -26,6 +26,9 @@ export interface KyselyOtelOptions {
   transactions?: boolean;
   /** span.recordException on query failure. Default true. */
   recordExceptions?: boolean;
+  /** Skip observing a query (no span, no metric) by returning false.
+   *  Fail-open: a throwing filter observes the query anyway. */
+  shouldObserve?: (ctx: QueryContext) => boolean;
   /** Custom attributes hook. Failures are swallowed. Cardinality/PII is the caller's responsibility. */
   attributes?: (ctx: QueryContext) => Attributes;
   /** Extra query-text scrubbing, runs last in all emitting modes. Throwing omits db.query.text. */
@@ -51,6 +54,7 @@ export interface NormalizedOptions {
   readonly metrics: boolean;
   readonly transactions: boolean;
   readonly recordExceptions: boolean;
+  readonly shouldObserve?: (ctx: QueryContext) => boolean;
   readonly attributes?: (ctx: QueryContext) => Attributes;
   readonly redact?: (sql: string) => string;
   readonly tracerProvider?: TracerProvider;
@@ -73,6 +77,7 @@ export function normalizeOptions(options: KyselyOtelOptions = {}): NormalizedOpt
     metrics: options.metrics ?? true,
     transactions: options.transactions ?? true,
     recordExceptions: options.recordExceptions ?? true,
+    ...(options.shouldObserve !== undefined && { shouldObserve: options.shouldObserve }),
     ...(options.attributes !== undefined && { attributes: options.attributes }),
     ...(options.redact !== undefined && { redact: options.redact }),
     ...(options.tracerProvider !== undefined && { tracerProvider: options.tracerProvider }),

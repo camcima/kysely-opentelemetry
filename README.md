@@ -111,6 +111,7 @@ All options are optional; every default is production-safe as shipped.
 | `recordExceptions` | `boolean` | `true` | Call `span.recordException()` on query failure (in addition to setting `ERROR` status and `error.type`). This records the driver's own error (message + stack), which may echo a submitted value — see [Safety model](#safety-model). The span status `message` is always set to `error.message` regardless of this option. |
 | `attributes` | `(ctx: QueryContext) => Attributes` | — | Custom-attribute escape hatch, merged onto the span after all built-in attributes. |
 | `redact` | `(sql: string) => string` | — | Extra query-text scrubbing, applied last, in every emitting mode. |
+| `shouldObserve` | `(ctx: QueryContext) => boolean` | — | Return `false` to skip a query entirely (no span, no metric). Fail-open: if the filter throws, the query is observed. |
 | `tracerProvider` | `TracerProvider` | global registry | Route spans through this provider instead of the global `@opentelemetry/api` registry. |
 | `meterProvider` | `MeterProvider` | global registry | Route the duration metric through this provider instead of the global registry. |
 
@@ -139,6 +140,17 @@ observeDialect(dialect, {
 Runs last, on whatever text `queryText` would otherwise emit (`sanitized` or `parameterized`), and does **not** affect `db.query.fingerprint`, `db.query.hash`, or table extraction. If it throws, `db.query.text` is omitted for that query rather than risking a leak — instrumentation degrades safely instead of failing the query.
 
 **Warning:** a `redact` hook that runs a slow or unbounded regex on every query's SQL text runs on your hot path; keep it fast and defensive (bounded regexes, no unbounded backtracking).
+
+### The `shouldObserve` hook
+
+```ts
+observeDialect(dialect, {
+  // Skip health checks and other noise — no span, no metric.
+  shouldObserve: (ctx) => ctx.sql !== 'select 1',
+});
+```
+
+The filter runs on the hot path before span creation; keep it cheap. It receives the same `QueryContext` as the `attributes` hook.
 
 ## Emitted telemetry reference
 

@@ -171,6 +171,9 @@ export class ObservedConnection implements DatabaseConnection {
   private startQuery(compiledQuery: CompiledQuery): StartedQuery | undefined {
     try {
       const ctx = this.deps.analyze(compiledQuery);
+      if (this.deps.options.shouldObserve && !safeShouldObserve(this.deps.options.shouldObserve, ctx)) {
+        return undefined;
+      }
       const parent = this.pickParent();
       const attributes = buildQueryAttributes(ctx, this.deps.dbSystem, this.deps.options);
       if (this.acquireDurationMs !== undefined) {
@@ -231,6 +234,17 @@ export class ObservedConnection implements DatabaseConnection {
     } catch (err) {
       warnLimited('failed to record query failure telemetry', err);
     }
+  }
+}
+
+function safeShouldObserve(
+  filter: (ctx: QueryContext) => boolean,
+  ctx: QueryContext,
+): boolean {
+  try {
+    return filter(ctx);
+  } catch {
+    return true; // fail-open: a broken filter must not disable instrumentation
   }
 }
 
