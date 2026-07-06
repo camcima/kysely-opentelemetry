@@ -156,6 +156,21 @@ describe('ObservedConnection.streamQuery', () => {
     expect(spans).toHaveLength(1);
     expect(spans[0]!.status.code).toBe(SpanStatusCode.ERROR);
   });
+
+  it('does not record a duration metric when a stream is force-closed on release', async () => {
+    const { connection } = makeConnection(() => ({ rows: [{ id: 1 }, { id: 2 }] }));
+    const iterator = connection.streamQuery(SELECT, 1);
+    await iterator.next(); // start, then abandon without finishing
+    connection.endOpenStreamSpans();
+    const span = otel.spanExporter.getFinishedSpans()[0]!;
+    expect(span.attributes['kysely.stream.outcome']).toBe('released_unfinished');
+    const metricData = await otel.collectMetrics();
+    const metric = metricData
+      .flatMap((rm) => rm.scopeMetrics)
+      .flatMap((sm) => sm.metrics)
+      .find((m) => m.descriptor.name === 'db.client.operation.duration');
+    expect(metric?.dataPoints ?? []).toHaveLength(0);
+  });
 });
 
 describe('shouldObserve filter', () => {

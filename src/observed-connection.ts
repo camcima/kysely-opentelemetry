@@ -108,19 +108,23 @@ export class ObservedConnection implements DatabaseConnection {
       this.#openStreamEnders.delete(endSpan);
       try {
         if (error === undefined) {
+          try {
+            span.setAttribute(ATTR_RETURNED_ROWS, rowCount);
+          } catch (e) {
+            warnLimited('failed to set stream row-count attribute', e);
+          }
           if (forced) {
             try {
               span.setAttribute(ATTR_STREAM_OUTCOME, 'released_unfinished');
             } catch (e) {
               warnLimited('failed to set stream outcome attribute', e);
             }
+            // No metric on forced close: an abandoned stream has no meaningful
+            // operation duration; recording lease-time as a success would pollute
+            // the db.client.operation.duration histogram.
+          } else {
+            this.finishSuccess(ctx, startTime);
           }
-          try {
-            span.setAttribute(ATTR_RETURNED_ROWS, rowCount);
-          } catch (e) {
-            warnLimited('failed to set stream row-count attribute', e);
-          }
-          this.finishSuccess(ctx, startTime);
         } else {
           this.finishFailure(span, ctx, startTime, error);
         }

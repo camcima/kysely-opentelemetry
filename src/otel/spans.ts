@@ -24,6 +24,8 @@ export function recordError(span: Span, error: unknown, options: NormalizedOptio
 }
 
 const MAX_WARNINGS_PER_CONTEXT = 10;
+// Keys MUST be static literals: a dynamic/interpolated context string would
+// grow this map unbounded. All call sites pass fixed literals.
 const warnCounts = new Map<string, number>();
 
 /**

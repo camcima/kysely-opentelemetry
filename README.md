@@ -125,7 +125,7 @@ observeDialect(dialect, {
 });
 ```
 
-`ctx` (`QueryContext`) exposes `sql`, `parameters`, `operation`, `tables`, `tablesTruncated`, `primaryTable`, `summary`, `fingerprint`, `hash`, `isRaw`, and `sanitizationError`. If the hook throws, the failure is swallowed and the span is still emitted without the extra attributes — instrumentation must never break a query.
+`ctx` (`QueryContext`) exposes `sql`, `parameters`, `operation`, `tables`, `tablesTruncated`, `primaryTable`, `summary`, `fingerprint`, `hash`, `isRaw`, `sanitizationError`, and `text`. If the hook throws, the failure is swallowed and the span is still emitted without the extra attributes — instrumentation must never break a query.
 
 **Warning:** whatever this hook returns is emitted as-is. Cardinality and PII are entirely your responsibility — never derive an attribute from `ctx.parameters` or from `ctx.sql`/`ctx.fingerprint` in a way that could leak a raw value, and avoid high-cardinality values (user IDs, emails, request IDs) as span attributes if your backend charges or indexes by attribute cardinality. Prefer low-cardinality dimensions (tenant tier, region, feature flag) here.
 

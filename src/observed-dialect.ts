@@ -18,6 +18,14 @@ import { VERSION } from './version.js';
 export class ObservedDialect implements Dialect {
   private readonly options: NormalizedOptions;
 
+  /**
+   * @param inner The dialect to instrument.
+   * @param options Instrumentation options. Note: `enabled: false` is honored
+   * only by the `observeDialect()` factory — constructing an `ObservedDialect`
+   * directly always instruments. When `observeDialect()` is called on an
+   * already-wrapped dialect, the existing wrapper is returned and these
+   * options are ignored.
+   */
   constructor(
     private readonly inner: Dialect,
     options: KyselyOtelOptions = {},
