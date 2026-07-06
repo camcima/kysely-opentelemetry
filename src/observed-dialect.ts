@@ -16,10 +16,14 @@ import { detectDbSystem } from './otel/system.js';
 import { VERSION } from './version.js';
 
 export class ObservedDialect implements Dialect {
+  private readonly options: NormalizedOptions;
+
   constructor(
     private readonly inner: Dialect,
-    private readonly options: NormalizedOptions,
-  ) {}
+    options: KyselyOtelOptions = {},
+  ) {
+    this.options = normalizeOptions(options);
+  }
 
   createDriver(): Driver {
     const deps: ObservedConnectionDeps = {
@@ -48,9 +52,10 @@ export class ObservedDialect implements Dialect {
 /**
  * Wrap a Kysely dialect with OpenTelemetry instrumentation.
  * With `enabled: false` the original dialect is returned untouched.
+ * Wrapping an already-observed dialect returns it unchanged.
  */
 export function observeDialect(dialect: Dialect, options?: KyselyOtelOptions): Dialect {
-  const normalized = normalizeOptions(options);
-  if (!normalized.enabled) return dialect;
-  return new ObservedDialect(dialect, normalized);
+  if (dialect instanceof ObservedDialect) return dialect;
+  if (!(options?.enabled ?? true)) return dialect;
+  return new ObservedDialect(dialect, options);
 }
