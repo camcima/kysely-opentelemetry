@@ -85,4 +85,13 @@ describe('createAnalyzer', () => {
     const ctx = analyze(compile((db) => db.selectFrom('orders').selectAll()));
     expect(Object.isFrozen(ctx.tables)).toBe(true);
   });
+
+  it('does not confuse a raw query with a builder query that compiles to identical sql', () => {
+    const freshAnalyze = createAnalyzer(normalizeOptions());
+    const builder = compile((db) => db.selectFrom('orders').selectAll());
+    const raw = compileRaw(builder.sql);
+    expect(raw.sql).toBe(builder.sql); // precondition: identical SQL text
+    expect(freshAnalyze(raw).isRaw).toBe(true); // raw analyzed first, seeds the cache
+    expect(freshAnalyze(builder).isRaw).toBe(false); // must NOT be served the raw entry
+  });
 });

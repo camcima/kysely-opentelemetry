@@ -37,10 +37,13 @@ const CACHE_SIZE = 10_000;
 export function createAnalyzer(options: NormalizedOptions): Analyzer {
   const cache = new LruCache<string, QueryAnalysis>(CACHE_SIZE);
   return (compiledQuery) => {
-    let analysis = cache.get(compiledQuery.sql);
+    // Key on kind + sql: a raw query and a builder query can compile to the
+    // identical SQL string yet analyze differently (isRaw, table extraction).
+    const key = `${compiledQuery.query.kind}\0${compiledQuery.sql}`;
+    let analysis = cache.get(key);
     if (!analysis) {
       analysis = analyzeSql(compiledQuery, options);
-      cache.set(compiledQuery.sql, analysis);
+      cache.set(key, analysis);
     }
     return { ...analysis, sql: compiledQuery.sql, parameters: compiledQuery.parameters };
   };
