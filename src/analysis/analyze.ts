@@ -10,6 +10,7 @@ import { extractTables, extractTablesFromRawSql } from './tables.js';
 export interface QueryAnalysis {
   readonly operation: string;
   readonly tables: string[];
+  readonly tablesTruncated: boolean;
   readonly primaryTable?: string;
   readonly summary: string;
   readonly fingerprint: string;
@@ -58,11 +59,12 @@ function analyzeSql(compiledQuery: CompiledQuery, options: NormalizedOptions): Q
   const { sql, query } = compiledQuery;
   const isRaw = query.kind === 'RawNode';
   const operation = operationName(query, sql);
-  const tables = options.tables
+  const extraction = options.tables
     ? isRaw
       ? extractTablesFromRawSql(sql)
       : extractTables(query)
-    : [];
+    : { tables: [], truncated: false };
+  const { tables } = extraction;
   // Frozen so a mutating consumer of ctx.tables cannot corrupt the shared
   // LRU entry returned by reference on every cache hit for this SQL.
   Object.freeze(tables);
@@ -87,6 +89,7 @@ function analyzeSql(compiledQuery: CompiledQuery, options: NormalizedOptions): Q
   return {
     operation,
     tables,
+    tablesTruncated: extraction.truncated,
     ...(tables[0] !== undefined && { primaryTable: tables[0] }),
     summary,
     fingerprint,

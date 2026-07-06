@@ -10,7 +10,7 @@ function fakeHistogram() {
 
 function ctx(overrides: Partial<QueryContext> = {}): QueryContext {
   return {
-    sql: 'select 1', parameters: [], operation: 'SELECT', tables: [],
+    sql: 'select 1', parameters: [], operation: 'SELECT', tables: [], tablesTruncated: false,
     summary: 'SELECT orders', fingerprint: 'select ?', hash: 'abc', isRaw: false,
     sanitizationError: false, ...overrides,
   } as QueryContext;

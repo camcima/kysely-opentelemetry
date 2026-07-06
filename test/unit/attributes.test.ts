@@ -66,4 +66,22 @@ describe('buildQueryAttributes', () => {
     expect(defaults.attrs).not.toHaveProperty('server.address');
     expect(defaults.attrs).not.toHaveProperty('server.port');
   });
+
+  it('flags table-list truncation on the span', () => {
+    const options = normalizeOptions();
+    const cq = compile((db) => {
+      let qb = db.selectFrom('t0').selectAll();
+      for (let i = 1; i < 30; i += 1) {
+        qb = qb.innerJoin(`t${i}`, `t${i}.id`, 't0.id') as typeof qb;
+      }
+      return qb;
+    });
+    const ctx = createAnalyzer(options)(cq);
+    expect(ctx.tablesTruncated).toBe(true);
+    const attrs = buildQueryAttributes(ctx, 'postgresql', options);
+    expect(attrs['kysely.query.tables_truncated']).toBe(true);
+
+    const { attrs: normal } = attrsFor();
+    expect(normal).not.toHaveProperty('kysely.query.tables_truncated');
+  });
 });

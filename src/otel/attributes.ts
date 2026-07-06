@@ -17,6 +17,7 @@ export const ATTR_SERVER_PORT = 'server.port';
 export const ATTR_DB_QUERY_FINGERPRINT = 'db.query.fingerprint';
 export const ATTR_DB_QUERY_HASH = 'db.query.hash';
 export const ATTR_TABLES = 'kysely.query.tables';
+export const ATTR_TABLES_TRUNCATED = 'kysely.query.tables_truncated';
 export const ATTR_PARAMETER_COUNT = 'kysely.query.parameter_count';
 export const ATTR_RAW = 'kysely.query.raw';
 export const ATTR_SANITIZATION_ERROR = 'kysely.query.sanitization_error';
@@ -42,6 +43,7 @@ export function buildQueryAttributes(
   if (ctx.text !== undefined) attrs[ATTR_DB_QUERY_TEXT] = ctx.text;
   if (options.tables && ctx.primaryTable !== undefined) attrs[ATTR_DB_COLLECTION] = ctx.primaryTable;
   if (options.tables && ctx.tables.length > 0) attrs[ATTR_TABLES] = ctx.tables;
+  if (options.tables && ctx.tablesTruncated) attrs[ATTR_TABLES_TRUNCATED] = true;
   if (options.fingerprint && ctx.fingerprint && !ctx.sanitizationError) {
     attrs[ATTR_DB_QUERY_FINGERPRINT] = ctx.fingerprint;
   }

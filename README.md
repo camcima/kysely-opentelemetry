@@ -125,7 +125,7 @@ observeDialect(dialect, {
 });
 ```
 
-`ctx` (`QueryContext`) exposes `sql`, `parameters`, `operation`, `tables`, `primaryTable`, `summary`, `fingerprint`, `hash`, `isRaw`, and `sanitizationError`. If the hook throws, the failure is swallowed and the span is still emitted without the extra attributes — instrumentation must never break a query.
+`ctx` (`QueryContext`) exposes `sql`, `parameters`, `operation`, `tables`, `tablesTruncated`, `primaryTable`, `summary`, `fingerprint`, `hash`, `isRaw`, and `sanitizationError`. If the hook throws, the failure is swallowed and the span is still emitted without the extra attributes — instrumentation must never break a query.
 
 **Warning:** whatever this hook returns is emitted as-is. Cardinality and PII are entirely your responsibility — never derive an attribute from `ctx.parameters` or from `ctx.sql`/`ctx.fingerprint` in a way that could leak a raw value, and avoid high-cardinality values (user IDs, emails, request IDs) as span attributes if your backend charges or indexes by attribute cardinality. Prefer low-cardinality dimensions (tenant tier, region, feature flag) here.
 
@@ -168,6 +168,7 @@ The filter runs on the hot path before span creation; keep it cheap. It receives
 | `db.query.fingerprint` | `fingerprint: true` (default) and no sanitization error | Placeholder-normalized, literal-scrubbed SQL shape; stable grouping key across parameter values; ≤`maxQueryTextLength` chars. |
 | `db.query.hash` | `hash: true` (default) | `sha256(fingerprint)`, first 16 hex chars — a compact grouping key for dashboards/alerts. |
 | `kysely.query.tables` | `tables: true` (default) and at least one table was found | All tables involved, deduped, first-seen order, capped at 20. |
+| `kysely.query.tables_truncated` | more than 20 tables were referenced | `true`; the `kysely.query.tables` list is capped and not exhaustive for this query. |
 | `kysely.query.parameter_count` | always | Number of bind parameters — never the values themselves. |
 | `kysely.query.raw` | the query's root AST node is a `RawNode` | `true` when the query came from `sql`/`sql.raw` rather than the query builder. |
 | `kysely.query.sanitization_error` | the fingerprint sanitizer threw | `true`; `db.query.text` is omitted for that query. |
