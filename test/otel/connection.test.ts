@@ -119,6 +119,8 @@ describe('ObservedConnection.streamQuery', () => {
     const spans = otel.spanExporter.getFinishedSpans();
     expect(spans).toHaveLength(1);
     expect(spans[0]!.attributes['db.response.returned_rows']).toBe(3);
+    // Backstop-only marker: a normally-completed stream is never tagged.
+    expect(spans[0]!.attributes['kysely.stream.outcome']).toBeUndefined();
   });
 
   it('ends the span with error status when the stream throws', async () => {

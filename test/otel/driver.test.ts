@@ -129,6 +129,8 @@ describe('ObservedDriver stream span backstop', () => {
     await iterator.next(); // start the stream, then abandon it without return()
     expect(otel.spanExporter.getFinishedSpans()).toHaveLength(0);
     await driver.releaseConnection(connection);
-    expect(otel.spanExporter.getFinishedSpans()).toHaveLength(1);
+    const spans = otel.spanExporter.getFinishedSpans();
+    expect(spans).toHaveLength(1);
+    expect(spans[0]!.attributes['kysely.stream.outcome']).toBe('released_unfinished');
   });
 });

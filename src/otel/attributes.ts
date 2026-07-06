@@ -20,6 +20,7 @@ export const ATTR_SANITIZATION_ERROR = 'kysely.query.sanitization_error';
 export const ATTR_AFFECTED_ROWS = 'kysely.query.affected_rows';
 export const ATTR_ACQUIRE_DURATION = 'kysely.pool.acquire_duration_ms';
 export const ATTR_TRANSACTION_OUTCOME = 'kysely.transaction.outcome';
+export const ATTR_STREAM_OUTCOME = 'kysely.stream.outcome';
 
 export function buildQueryAttributes(
   ctx: QueryContext,

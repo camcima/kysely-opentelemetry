@@ -14,6 +14,7 @@ import {
   ATTR_ACQUIRE_DURATION,
   ATTR_AFFECTED_ROWS,
   ATTR_RETURNED_ROWS,
+  ATTR_STREAM_OUTCOME,
   buildQueryAttributes,
 } from './otel/attributes.js';
 import { recordDuration } from './otel/metrics.js';
@@ -44,7 +45,7 @@ export class ObservedConnection implements DatabaseConnection {
   acquireDurationMs: number | undefined = undefined;
   /** endSpan closures of streams still open on this connection; drained by
    *  endOpenStreamSpans() when the lease ends (abandoned manual iterators). */
-  readonly #openStreamEnders = new Set<(error?: unknown) => void>();
+  readonly #openStreamEnders = new Set<(error?: unknown, forced?: boolean) => void>();
 
   // Optional Kysely 0.29 members, forwarded only when the inner connection has them.
   cancelQuery?: NonNullable<DatabaseConnection['cancelQuery']>;
@@ -98,12 +99,19 @@ export class ObservedConnection implements DatabaseConnection {
     let rowCount = 0;
     let ended = false;
 
-    const endSpan = (error?: unknown): void => {
+    const endSpan = (error?: unknown, forced = false): void => {
       if (ended) return;
       ended = true;
       this.#openStreamEnders.delete(endSpan);
       try {
         if (error === undefined) {
+          if (forced) {
+            try {
+              span.setAttribute(ATTR_STREAM_OUTCOME, 'released_unfinished');
+            } catch (e) {
+              warnLimited('failed to set stream outcome attribute', e);
+            }
+          }
           try {
             span.setAttribute(ATTR_RETURNED_ROWS, rowCount);
           } catch (e) {
@@ -154,7 +162,7 @@ export class ObservedConnection implements DatabaseConnection {
   /** Defensive backstop: a stream span must never outlive its connection
    *  lease. Called by ObservedDriver.releaseConnection. */
   endOpenStreamSpans(): void {
-    for (const end of [...this.#openStreamEnders]) end();
+    for (const end of [...this.#openStreamEnders]) end(undefined, true);
   }
 
   private startQuery(compiledQuery: CompiledQuery): StartedQuery | undefined {
