@@ -158,7 +158,7 @@ Runs last, on whatever text `queryText` would otherwise emit (`sanitized` or `pa
 | `error.type` | on failure | The DB driver's error `code` when exposed (e.g. Postgres `23505`), else the error's constructor name, else `_OTHER`. |
 | `kysely.stream.outcome` | on a stream span force-closed at connection release | `released_unfinished` — set only when a manually-driven stream iterator is abandoned and its span is force-closed as the connection returns to the pool; absent on streams that complete, error, or `break` normally. |
 
-Transaction spans (`transactions: true`, default) are named `TRANSACTION`, kind `CLIENT`, and carry `db.system.name` plus `kysely.transaction.outcome` (`committed` | `rolled_back` | `begin_failed` | `commit_failed` | `rollback_failed` | `released_unfinished`). Query spans issued inside `db.transaction()` are children of the transaction span.
+Transaction spans (`transactions: true`, default) are named `TRANSACTION`, kind `CLIENT`, and carry `db.system.name` plus `kysely.transaction.outcome` (`committed` | `rolled_back` | `begin_failed` | `commit_failed` | `rollback_failed` | `released_unfinished`). Query spans issued inside `db.transaction()` are children of the transaction span — unless you open your own span inside the transaction callback, in which case queries nest under *your* span instead. (The two hierarchies cannot be combined: the driver cannot inject the `TRANSACTION` span into your ambient context, so when you create spans of your own, your hierarchy wins and the `TRANSACTION` span remains a sibling that still carries the outcome attribute.)
 
 ### Metric
 

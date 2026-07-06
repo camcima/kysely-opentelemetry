@@ -41,6 +41,9 @@ export class ObservedConnection implements DatabaseConnection {
    *  undefined, which exactOptionalPropertyTypes forbids on `?:` fields. */
   transactionSpan: Span | undefined = undefined;
   transactionContext: Context | undefined = undefined;
+  /** Span active when the transaction began; when the active span at query
+   *  time differs, the user opened their own span inside the callback. */
+  transactionParentSpan: Span | undefined = undefined;
   /** Set by ObservedDriver on acquire; consumed by the first query span. */
   acquireDurationMs: number | undefined = undefined;
   /** endSpan closures of streams still open on this connection; drained by
@@ -168,7 +171,7 @@ export class ObservedConnection implements DatabaseConnection {
   private startQuery(compiledQuery: CompiledQuery): StartedQuery | undefined {
     try {
       const ctx = this.deps.analyze(compiledQuery);
-      const parent = this.transactionContext ?? context.active();
+      const parent = this.pickParent();
       const attributes = buildQueryAttributes(ctx, this.deps.dbSystem, this.deps.options);
       if (this.acquireDurationMs !== undefined) {
         attributes[ATTR_ACQUIRE_DURATION] = this.acquireDurationMs;
@@ -184,6 +187,16 @@ export class ObservedConnection implements DatabaseConnection {
       warnLimited('query span creation failed (query executed unobserved)', error);
       return undefined;
     }
+  }
+
+  /** Inside a transaction, parent queries to the TRANSACTION span — unless
+   *  the user opened their own span since BEGIN, in which case their
+   *  hierarchy wins (the TRANSACTION span can never be in the ambient
+   *  context, so the two lineages cannot be combined). */
+  private pickParent(): Context {
+    const active = context.active();
+    if (this.transactionContext === undefined) return active;
+    return trace.getSpan(active) === this.transactionParentSpan ? this.transactionContext : active;
   }
 
   private finishSuccess(ctx: QueryContext, startTime: number): void {

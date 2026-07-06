@@ -119,6 +119,23 @@ describe('ObservedDriver transaction spans', () => {
     const querySpan = otel.spanExporter.getFinishedSpans().find((s) => s.name === 'SELECT orders')!;
     expect(querySpan.parentSpanContext).toBeUndefined();
   });
+
+  it('parents queries to a user-created span inside the transaction, not TRANSACTION', async () => {
+    const { driver } = makeDriver();
+    const connection = await driver.acquireConnection();
+    await driver.beginTransaction(connection, {});
+    const tracer = trace.getTracer('user');
+    await tracer.startActiveSpan('user-step', async (userSpan) => {
+      await connection.executeQuery(SELECT);
+      userSpan.end();
+    });
+    await driver.commitTransaction(connection);
+
+    const spans = otel.spanExporter.getFinishedSpans();
+    const querySpan = spans.find((s) => s.name === 'SELECT orders')!;
+    const userSpan = spans.find((s) => s.name === 'user-step')!;
+    expect(querySpan.parentSpanContext?.spanId).toBe(userSpan.spanContext().spanId);
+  });
 });
 
 describe('ObservedDriver stream span backstop', () => {

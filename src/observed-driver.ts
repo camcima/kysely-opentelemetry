@@ -108,6 +108,7 @@ export class ObservedDriver implements Driver {
         parent,
       );
       wrapper.transactionSpan = span;
+      wrapper.transactionParentSpan = trace.getSpan(parent);
       wrapper.transactionContext = trace.setSpan(parent, span);
     } catch (error) {
       warnLimited('failed to start transaction span', error);
@@ -122,6 +123,7 @@ export class ObservedDriver implements Driver {
     const span = wrapper.transactionSpan;
     wrapper.transactionSpan = undefined;
     wrapper.transactionContext = undefined;
+    wrapper.transactionParentSpan = undefined;
     if (!span) return;
     try {
       span.setAttribute(ATTR_TRANSACTION_OUTCOME, outcome);
