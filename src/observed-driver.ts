@@ -1,8 +1,14 @@
-import { context, SpanKind, trace } from '@opentelemetry/api';
+import { context, SpanKind, trace, type Attributes } from '@opentelemetry/api';
 import type { DatabaseConnection, Driver, TransactionSettings } from 'kysely';
 import { ObservedConnection, type ObservedConnectionDeps } from './observed-connection.js';
-import { ATTR_DB_SYSTEM, ATTR_TRANSACTION_OUTCOME } from './otel/attributes.js';
-import { recordError, warnOnce } from './otel/spans.js';
+import {
+  ATTR_DB_NAMESPACE,
+  ATTR_DB_SYSTEM,
+  ATTR_SERVER_ADDRESS,
+  ATTR_SERVER_PORT,
+  ATTR_TRANSACTION_OUTCOME,
+} from './otel/attributes.js';
+import { recordError, warnLimited } from './otel/spans.js';
 
 export class ObservedDriver implements Driver {
   readonly #wrappers = new WeakMap<DatabaseConnection, ObservedConnection>();
@@ -89,8 +95,13 @@ export class ObservedDriver implements Driver {
     options?: Parameters<Driver['releaseConnection']>[1],
   ): Promise<void> {
     const wrapper = asWrapper(connection);
-    // Defensive: a transaction span must never outlive its connection lease.
-    if (wrapper?.transactionSpan) this.endTransactionSpan(wrapper, 'released_unfinished');
+    try {
+      // Defensive: spans must never outlive their connection lease.
+      wrapper?.endOpenStreamSpans();
+      if (wrapper?.transactionSpan) this.endTransactionSpan(wrapper, 'released_unfinished');
+    } catch (error) {
+      warnLimited('failed to finalize spans on connection release', error);
+    }
     return this.inner.releaseConnection(unwrap(connection), options);
   }
 
@@ -101,15 +112,21 @@ export class ObservedDriver implements Driver {
   private startTransactionSpan(wrapper: ObservedConnection): void {
     try {
       const parent = context.active();
+      const attributes: Attributes = { [ATTR_DB_SYSTEM]: this.deps.dbSystem };
+      const { namespace, serverAddress, serverPort } = this.deps.options;
+      if (namespace !== undefined) attributes[ATTR_DB_NAMESPACE] = namespace;
+      if (serverAddress !== undefined) attributes[ATTR_SERVER_ADDRESS] = serverAddress;
+      if (serverPort !== undefined) attributes[ATTR_SERVER_PORT] = serverPort;
       const span = this.deps.tracer.startSpan(
         'TRANSACTION',
-        { kind: SpanKind.CLIENT, attributes: { [ATTR_DB_SYSTEM]: this.deps.dbSystem } },
+        { kind: SpanKind.CLIENT, attributes },
         parent,
       );
       wrapper.transactionSpan = span;
+      wrapper.transactionParentSpan = trace.getSpan(parent);
       wrapper.transactionContext = trace.setSpan(parent, span);
     } catch (error) {
-      warnOnce(error);
+      warnLimited('failed to start transaction span', error);
     }
   }
 
@@ -121,12 +138,13 @@ export class ObservedDriver implements Driver {
     const span = wrapper.transactionSpan;
     wrapper.transactionSpan = undefined;
     wrapper.transactionContext = undefined;
+    wrapper.transactionParentSpan = undefined;
     if (!span) return;
     try {
       span.setAttribute(ATTR_TRANSACTION_OUTCOME, outcome);
       if (error !== undefined) recordError(span, error, this.deps.options);
     } catch (err) {
-      warnOnce(err);
+      warnLimited('failed to finalize transaction span', err);
     } finally {
       span.end();
     }

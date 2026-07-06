@@ -1,6 +1,17 @@
+import {
+  AggregationTemporality,
+  InMemoryMetricExporter,
+  MeterProvider,
+  PeriodicExportingMetricReader,
+} from '@opentelemetry/sdk-metrics';
+import {
+  BasicTracerProvider,
+  InMemorySpanExporter,
+  SimpleSpanProcessor,
+} from '@opentelemetry/sdk-trace-base';
 import { Kysely, type CompiledQuery } from 'kysely';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { observeDialect } from '../../src/index.js';
+import { observeDialect, ObservedDialect } from '../../src/index.js';
 import { createFakeDialect } from '../helpers/fake-dialect.js';
 import { setupOtel } from '../helpers/otel.js';
 
@@ -101,5 +112,46 @@ describe('observeDialect end-to-end', () => {
       throw boom;
     });
     await expect(db.selectFrom('orders').selectAll().execute()).rejects.toBe(boom);
+  });
+
+  it('returns an already-observed dialect unchanged (no double instrumentation)', () => {
+    const { dialect } = createFakeDialect();
+    const once = observeDialect(dialect);
+    expect(observeDialect(once)).toBe(once);
+  });
+
+  it('ObservedDialect is directly constructible with public options', async () => {
+    const { dialect } = createFakeDialect();
+    const db = new Kysely<any>({ dialect: new ObservedDialect(dialect, { dbSystem: 'cockroachdb' }) });
+    await db.selectFrom('orders').selectAll().execute();
+    expect(otel.spanExporter.getFinishedSpans()[0]!.attributes['db.system.name']).toBe('cockroachdb');
+  });
+
+  it('routes spans and metrics through injected providers instead of the globals', async () => {
+    const spanExporter = new InMemorySpanExporter();
+    const tracerProvider = new BasicTracerProvider({
+      spanProcessors: [new SimpleSpanProcessor(spanExporter)],
+    });
+    const metricExporter = new InMemoryMetricExporter(AggregationTemporality.CUMULATIVE);
+    const meterProvider = new MeterProvider({
+      readers: [
+        new PeriodicExportingMetricReader({ exporter: metricExporter, exportIntervalMillis: 3_600_000 }),
+      ],
+    });
+
+    const { db } = makeDb(undefined, { tracerProvider, meterProvider });
+    await db.selectFrom('orders').selectAll().execute();
+
+    expect(otel.spanExporter.getFinishedSpans()).toHaveLength(0); // global registry untouched
+    expect(spanExporter.getFinishedSpans()).toHaveLength(1);
+    await meterProvider.forceFlush();
+    const metric = metricExporter
+      .getMetrics()
+      .flatMap((rm) => rm.scopeMetrics)
+      .flatMap((sm) => sm.metrics)
+      .find((m) => m.descriptor.name === 'db.client.operation.duration');
+    expect(metric).toBeDefined();
+    await tracerProvider.shutdown();
+    await meterProvider.shutdown();
   });
 });

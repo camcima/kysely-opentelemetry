@@ -1,7 +1,8 @@
-import { SpanKind, SpanStatusCode, trace } from '@opentelemetry/api';
+import { metrics, SpanKind, SpanStatusCode, trace } from '@opentelemetry/api';
 import { CompiledQuery } from 'kysely';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createAnalyzer } from '../../src/analysis/analyze.js';
+import type { QueryContext } from '../../src/analysis/analyze.js';
 import { ObservedConnection } from '../../src/observed-connection.js';
 import { normalizeOptions } from '../../src/options.js';
 import { createDurationHistogram } from '../../src/otel/metrics.js';
@@ -26,7 +27,7 @@ function makeConnection(script = (_cq: CompiledQuery) => ({ rows: [{ id: 1 }] })
     options,
     analyze: createAnalyzer(options),
     tracer: trace.getTracer('test'),
-    histogram: createDurationHistogram(),
+    histogram: createDurationHistogram(metrics.getMeter('test')),
     dbSystem: 'postgresql',
   });
   return { connection, inner };
@@ -119,6 +120,8 @@ describe('ObservedConnection.streamQuery', () => {
     const spans = otel.spanExporter.getFinishedSpans();
     expect(spans).toHaveLength(1);
     expect(spans[0]!.attributes['db.response.returned_rows']).toBe(3);
+    // Backstop-only marker: a normally-completed stream is never tagged.
+    expect(spans[0]!.attributes['kysely.stream.outcome']).toBeUndefined();
   });
 
   it('ends the span with error status when the stream throws', async () => {
@@ -142,5 +145,69 @@ describe('ObservedConnection.streamQuery', () => {
       break; // triggers iterator.return()
     }
     expect(otel.spanExporter.getFinishedSpans()).toHaveLength(1);
+  });
+
+  it('throw() without an argument raises a real Error, not undefined', async () => {
+    const { connection } = makeConnection(() => ({ rows: [{ id: 1 }, { id: 2 }] }));
+    const iterator = connection.streamQuery(SELECT, 1);
+    await iterator.next();
+    await expect(iterator.throw!()).rejects.toBeInstanceOf(Error);
+    const spans = otel.spanExporter.getFinishedSpans();
+    expect(spans).toHaveLength(1);
+    expect(spans[0]!.status.code).toBe(SpanStatusCode.ERROR);
+  });
+
+  it('does not record a duration metric when a stream is force-closed on release', async () => {
+    const { connection } = makeConnection(() => ({ rows: [{ id: 1 }, { id: 2 }] }));
+    const iterator = connection.streamQuery(SELECT, 1);
+    await iterator.next(); // start, then abandon without finishing
+    connection.endOpenStreamSpans();
+    const span = otel.spanExporter.getFinishedSpans()[0]!;
+    expect(span.attributes['kysely.stream.outcome']).toBe('released_unfinished');
+    const metricData = await otel.collectMetrics();
+    const metric = metricData
+      .flatMap((rm) => rm.scopeMetrics)
+      .flatMap((sm) => sm.metrics)
+      .find((m) => m.descriptor.name === 'db.client.operation.duration');
+    expect(metric?.dataPoints ?? []).toHaveLength(0);
+  });
+});
+
+describe('shouldObserve filter', () => {
+  function makeFiltered(shouldObserve: (ctx: QueryContext) => boolean) {
+    const options = normalizeOptions({ shouldObserve });
+    const inner = new FakeConnection((() => ({ rows: [] })) as any);
+    return new ObservedConnection(inner, {
+      options,
+      analyze: createAnalyzer(options),
+      tracer: trace.getTracer('test'),
+      histogram: createDurationHistogram(metrics.getMeter('test')),
+      dbSystem: 'postgresql',
+    });
+  }
+
+  it('skips span and metric when the filter returns false', async () => {
+    const connection = makeFiltered((ctx) => ctx.summary !== 'SELECT orders');
+    const result = await connection.executeQuery(SELECT);
+    expect(result.rows).toEqual([]); // query still executes
+    expect(otel.spanExporter.getFinishedSpans()).toHaveLength(0);
+    const metricData = await otel.collectMetrics();
+    const metric = metricData
+      .flatMap((rm) => rm.scopeMetrics)
+      .flatMap((sm) => sm.metrics)
+      .find((m) => m.descriptor.name === 'db.client.operation.duration');
+    expect(metric?.dataPoints ?? []).toHaveLength(0);
+  });
+
+  it('observes when the filter returns true, and fails open when it throws', async () => {
+    const observing = makeFiltered(() => true);
+    await observing.executeQuery(SELECT);
+    expect(otel.spanExporter.getFinishedSpans()).toHaveLength(1);
+
+    const throwing = makeFiltered(() => {
+      throw new Error('broken filter');
+    });
+    await throwing.executeQuery(SELECT);
+    expect(otel.spanExporter.getFinishedSpans()).toHaveLength(2); // still observed
   });
 });

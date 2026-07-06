@@ -15,7 +15,7 @@ Peer requirements:
 | `kysely` | `>=0.27 <0.30` |
 | `@opentelemetry/api` | `>=1.8` |
 
-You also need a configured OpenTelemetry SDK in your process (this package only calls into `@opentelemetry/api`; it never creates a tracer/meter provider itself). If you don't have one yet, see [`@opentelemetry/sdk-node`](https://www.npmjs.com/package/@opentelemetry/sdk-node).
+You also need a configured OpenTelemetry SDK in your process (this package only calls into `@opentelemetry/api`; it never creates a tracer/meter provider itself). If you don't have one yet, see [`@opentelemetry/sdk-node`](https://www.npmjs.com/package/@opentelemetry/sdk-node). By default it uses the process-global tracer/meter registries; pass the `tracerProvider`/`meterProvider` options to route telemetry through explicit providers instead.
 
 ## Quick start
 
@@ -97,10 +97,13 @@ All options are optional; every default is production-safe as shipped.
 |---|---|---|---|
 | `enabled` | `boolean` | `true` | Kill switch. When `false`, `observeDialect` returns the wrapped dialect completely untouched — zero overhead, zero spans. |
 | `dbSystem` | `string` | auto-detected | Override the auto-detected `db.system.name` (e.g. for a community dialect that isn't recognized). |
+| `namespace` | `string` | — | Emitted as `db.namespace` on all spans and the duration metric (typically the database name). Cannot be auto-detected from a dialect. |
+| `serverAddress` | `string` | — | Emitted as `server.address` on all spans and the duration metric. |
+| `serverPort` | `number` | — | Emitted as `server.port` on all spans and the duration metric. |
 | `queryText` | `'off' \| 'sanitized' \| 'parameterized'` | `'sanitized'` | Controls `db.query.text`. `'sanitized'` emits the scrubbed fingerprint; `'parameterized'` emits the compiled SQL as-is (already placeholder-parameterized by Kysely for builder queries); `'off'` omits `db.query.text` entirely. |
 | `maxQueryTextLength` | `number` | `4096` | Max characters for `db.query.text` and `db.query.fingerprint`. |
 | `fingerprint` | `boolean` | `true` | Emit `db.query.fingerprint`. |
-| `summary` | `boolean` | `true` | Emit `db.query.summary` (also used as the span name regardless of this flag). |
+| `summary` | `boolean` | `true` | Emit `db.query.summary` on spans **and** on the duration metric. The span *name* still uses the summary regardless (spans need a name); set this to `false` to keep the summary out of metric/attribute cardinality. |
 | `tables` | `boolean` | `true` | Emit `db.collection.name` and `kysely.query.tables`. |
 | `hash` | `boolean` | `true` | Emit `db.query.hash`. |
 | `metrics` | `boolean` | `true` | Emit the `db.client.operation.duration` histogram. |
@@ -108,6 +111,9 @@ All options are optional; every default is production-safe as shipped.
 | `recordExceptions` | `boolean` | `true` | Call `span.recordException()` on query failure (in addition to setting `ERROR` status and `error.type`). This records the driver's own error (message + stack), which may echo a submitted value — see [Safety model](#safety-model). The span status `message` is always set to `error.message` regardless of this option. |
 | `attributes` | `(ctx: QueryContext) => Attributes` | — | Custom-attribute escape hatch, merged onto the span after all built-in attributes. |
 | `redact` | `(sql: string) => string` | — | Extra query-text scrubbing, applied last, in every emitting mode. |
+| `shouldObserve` | `(ctx: QueryContext) => boolean` | — | Return `false` to skip a query entirely (no span, no metric). Fail-open: if the filter throws, the query is observed. |
+| `tracerProvider` | `TracerProvider` | global registry | Route spans through this provider instead of the global `@opentelemetry/api` registry. |
+| `meterProvider` | `MeterProvider` | global registry | Route the duration metric through this provider instead of the global registry. |
 
 ### The `attributes` hook
 
@@ -119,7 +125,7 @@ observeDialect(dialect, {
 });
 ```
 
-`ctx` (`QueryContext`) exposes `sql`, `parameters`, `operation`, `tables`, `primaryTable`, `summary`, `fingerprint`, `hash`, `isRaw`, and `sanitizationError`. If the hook throws, the failure is swallowed and the span is still emitted without the extra attributes — instrumentation must never break a query.
+`ctx` (`QueryContext`) exposes `sql`, `parameters`, `operation`, `tables`, `tablesTruncated`, `primaryTable`, `summary`, `fingerprint`, `hash`, `isRaw`, `sanitizationError`, and `text`. If the hook throws, the failure is swallowed and the span is still emitted without the extra attributes — instrumentation must never break a query.
 
 **Warning:** whatever this hook returns is emitted as-is. Cardinality and PII are entirely your responsibility — never derive an attribute from `ctx.parameters` or from `ctx.sql`/`ctx.fingerprint` in a way that could leak a raw value, and avoid high-cardinality values (user IDs, emails, request IDs) as span attributes if your backend charges or indexes by attribute cardinality. Prefer low-cardinality dimensions (tenant tier, region, feature flag) here.
 
@@ -135,6 +141,17 @@ Runs last, on whatever text `queryText` would otherwise emit (`sanitized` or `pa
 
 **Warning:** a `redact` hook that runs a slow or unbounded regex on every query's SQL text runs on your hot path; keep it fast and defensive (bounded regexes, no unbounded backtracking).
 
+### The `shouldObserve` hook
+
+```ts
+observeDialect(dialect, {
+  // Skip health checks and other noise — no span, no metric.
+  shouldObserve: (ctx) => ctx.sql !== 'select 1',
+});
+```
+
+The filter runs on the hot path before span creation; keep it cheap. It receives the same `QueryContext` as the `attributes` hook.
+
 ## Emitted telemetry reference
 
 ### Span attributes
@@ -142,6 +159,8 @@ Runs last, on whatever text `queryText` would otherwise emit (`sanitized` or `pa
 | Attribute | Emitted when | Notes |
 |---|---|---|
 | `db.system.name` | always | Auto-detected from the dialect adapter class (`postgresql`, `mysql`, `sqlite`, `microsoft.sql_server`, or `other_sql`), or the `dbSystem` override. |
+| `db.namespace` | `namespace` option set | The configured database name. |
+| `server.address` / `server.port` | `serverAddress` / `serverPort` option set | The configured DB host/port. |
 | `db.operation.name` | always | Derived from the AST node kind (`SELECT`, `INSERT`, `UPDATE`, `DELETE`, `CREATE TABLE`, …) or the first keyword of raw SQL. |
 | `db.query.summary` | `summary: true` (default) | `"{OPERATION} {tables…}"`, e.g. `SELECT orders`; also the span name; ≤255 chars. |
 | `db.query.text` | `queryText !== 'off'` (in `'sanitized'` mode, also requires no sanitization error) | Sanitized or parameterized SQL text, ≤`maxQueryTextLength` chars. In `'parameterized'` mode it is the raw compiled SQL and is emitted regardless of any sanitization error. |
@@ -149,6 +168,7 @@ Runs last, on whatever text `queryText` would otherwise emit (`sanitized` or `pa
 | `db.query.fingerprint` | `fingerprint: true` (default) and no sanitization error | Placeholder-normalized, literal-scrubbed SQL shape; stable grouping key across parameter values; ≤`maxQueryTextLength` chars. |
 | `db.query.hash` | `hash: true` (default) | `sha256(fingerprint)`, first 16 hex chars — a compact grouping key for dashboards/alerts. |
 | `kysely.query.tables` | `tables: true` (default) and at least one table was found | All tables involved, deduped, first-seen order, capped at 20. |
+| `kysely.query.tables_truncated` | more than 20 tables were referenced | `true`; the `kysely.query.tables` list is capped and not exhaustive for this query. |
 | `kysely.query.parameter_count` | always | Number of bind parameters — never the values themselves. |
 | `kysely.query.raw` | the query's root AST node is a `RawNode` | `true` when the query came from `sql`/`sql.raw` rather than the query builder. |
 | `kysely.query.sanitization_error` | the fingerprint sanitizer threw | `true`; `db.query.text` is omitted for that query. |
@@ -156,12 +176,13 @@ Runs last, on whatever text `queryText` would otherwise emit (`sanitized` or `pa
 | `db.response.returned_rows` | on successful completion | `result.rows.length`. |
 | `kysely.query.affected_rows` | on successful completion, when the driver reports it | `Number(result.numAffectedRows)`. |
 | `error.type` | on failure | The DB driver's error `code` when exposed (e.g. Postgres `23505`), else the error's constructor name, else `_OTHER`. |
+| `kysely.stream.outcome` | on a stream span force-closed at connection release | `released_unfinished` — set only when a manually-driven stream iterator is abandoned and its span is force-closed as the connection returns to the pool; absent on streams that complete, error, or `break` normally. |
 
-Transaction spans (`transactions: true`, default) are named `TRANSACTION`, kind `CLIENT`, and carry `db.system.name` plus `kysely.transaction.outcome` (`committed` | `rolled_back` | `begin_failed` | `commit_failed` | `rollback_failed` | `released_unfinished`). Query spans issued inside `db.transaction()` are children of the transaction span.
+Transaction spans (`transactions: true`, default) are named `TRANSACTION`, kind `CLIENT`, and carry `db.system.name`, `db.namespace` / `server.address` / `server.port` (when configured), plus `kysely.transaction.outcome` (`committed` | `rolled_back` | `begin_failed` | `commit_failed` | `rollback_failed` | `released_unfinished`). Query spans issued inside `db.transaction()` are children of the transaction span — unless you open your own span inside the transaction callback, in which case queries nest under *your* span instead. (The two hierarchies cannot be combined: the driver cannot inject the `TRANSACTION` span into your ambient context, so when you create spans of your own, your hierarchy wins and the `TRANSACTION` span remains a sibling that still carries the outcome attribute.)
 
 ### Metric
 
-`db.client.operation.duration` — a `Histogram` (unit: seconds, semconv bucket boundaries `[0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5, 10]`), recorded for **every** query regardless of trace sampling, so aggregates stay accurate even when only a fraction of traces are kept. Attributes are deliberately low-cardinality: `db.system.name`, `db.operation.name`, `db.query.summary`, `db.collection.name` (when known), and `error.type` (on failure).
+`db.client.operation.duration` — a `Histogram` (unit: seconds, semconv bucket boundaries `[0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5, 10]`), recorded for **every** query regardless of trace sampling, so aggregates stay accurate even when only a fraction of traces are kept. Attributes are deliberately low-cardinality: `db.system.name`, `db.operation.name`, `db.query.summary` (when `summary: true`, default), `db.collection.name` (when known), `db.namespace` / `server.address` / `server.port` (when configured), and `error.type` (on failure).
 
 ## TraceQL cookbook
 
@@ -224,8 +245,9 @@ Each layer instruments a different boundary — this library instruments Kysely'
 ### Known limitations
 
 - **Fingerprint scrubbing is defense-in-depth for raw SQL only.** Kysely compiles all query-builder values to bind parameters, so builder-generated queries never contain inline literals in the first place. The regex-based fingerprint scrubber exists to sanitize hand-written `sql`/`sql.raw` fragments; it handles single-quoted string literals (including MySQL's backslash-escape syntax) but **intentionally does not scrub double-quoted text**, because in Postgres and SQLite double quotes delimit identifiers (e.g. `"orders"`) — scrubbing them would corrupt fingerprints and break table extraction. A consequence: a MySQL double-quoted string literal embedded in hand-written raw SQL is not scrubbed. Use bind parameters (preferred) or single-quoted literals in raw SQL on MySQL.
+- **Raw-SQL string literals ending in a backslash corrupt that query's fingerprint on Postgres.** The scrubber treats `\'` as an escaped quote (MySQL semantics). Under Postgres's default `standard_conforming_strings = on`, a backslash is a literal character, so a hand-written literal like `'C:\'` makes the scrubber over-consume into the next literal — the fingerprint (and sanitized `db.query.text`) for that query loses the SQL between the two literals. Grouping keys remain stable (the corruption is deterministic), and no parameter value leaks. Builder queries are unaffected. Use bind parameters in raw SQL to avoid this entirely.
 - **CTE names appear in `kysely.query.tables`.** A query like `db.with('recent', (qb) => qb.selectFrom('events')...).selectFrom('recent')...` lists `recent` alongside real tables (`events`), because at the compiled-AST level a `selectFrom('recent')` reference to a CTE is indistinguishable from a reference to a physical table.
-- **Manually-driven streamed queries can leave a span open.** Consuming `.stream()` with `for await` (the normal usage pattern) always closes the span correctly on completion, error, or early `break`. If you instead manually drive the returned async iterator and abandon it without exhausting it or calling `.return()`, the span can remain open — a limitation of the JS async-iterator protocol, which has no way to signal abandonment.
+- **Manually-driven streamed queries can leave a span open.** Consuming `.stream()` with `for await` (the normal usage pattern) always closes the span correctly on completion, error, or early `break`. If you instead manually drive the returned async iterator and abandon it without exhausting it or calling `.return()`, the span stays open until the connection lease ends — when the connection is released back to the pool, the library force-closes any stream spans still open on it. A span force-closed this way is tagged `kysely.stream.outcome = "released_unfinished"` so abandoned streams stay queryable and distinguishable from ones that completed normally.
 
 ## License
 

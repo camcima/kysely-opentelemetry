@@ -23,12 +23,18 @@ export function recordError(span: Span, error: unknown, options: NormalizedOptio
   return type;
 }
 
-const MAX_WARNINGS = 10;
-let warnCount = 0;
+const MAX_WARNINGS_PER_CONTEXT = 10;
+// Keys MUST be static literals: a dynamic/interpolated context string would
+// grow this map unbounded. All call sites pass fixed literals.
+const warnCounts = new Map<string, number>();
 
-/** Instrumentation-internal failures: warn through OTel diagnostics, capped. */
-export function warnOnce(error: unknown): void {
-  if (warnCount >= MAX_WARNINGS) return;
-  warnCount += 1;
-  diag.warn('kysely-opentelemetry: instrumentation error (query executed unobserved)', error);
+/**
+ * Instrumentation-internal failures: warn through OTel diagnostics, capped
+ * per context string so one noisy failure class cannot silence the others.
+ */
+export function warnLimited(context: string, error: unknown): void {
+  const count = warnCounts.get(context) ?? 0;
+  if (count >= MAX_WARNINGS_PER_CONTEXT) return;
+  warnCounts.set(context, count + 1);
+  diag.warn(`kysely-opentelemetry: ${context}`, error);
 }

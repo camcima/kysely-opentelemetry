@@ -8,18 +8,23 @@ export const ATTR_DB_OPERATION = 'db.operation.name';
 export const ATTR_DB_QUERY_SUMMARY = 'db.query.summary';
 export const ATTR_DB_QUERY_TEXT = 'db.query.text';
 export const ATTR_DB_COLLECTION = 'db.collection.name';
+export const ATTR_DB_NAMESPACE = 'db.namespace';
 export const ATTR_RETURNED_ROWS = 'db.response.returned_rows';
 export const ATTR_ERROR_TYPE = 'error.type';
+export const ATTR_SERVER_ADDRESS = 'server.address';
+export const ATTR_SERVER_PORT = 'server.port';
 // Custom attributes
 export const ATTR_DB_QUERY_FINGERPRINT = 'db.query.fingerprint';
 export const ATTR_DB_QUERY_HASH = 'db.query.hash';
 export const ATTR_TABLES = 'kysely.query.tables';
+export const ATTR_TABLES_TRUNCATED = 'kysely.query.tables_truncated';
 export const ATTR_PARAMETER_COUNT = 'kysely.query.parameter_count';
 export const ATTR_RAW = 'kysely.query.raw';
 export const ATTR_SANITIZATION_ERROR = 'kysely.query.sanitization_error';
 export const ATTR_AFFECTED_ROWS = 'kysely.query.affected_rows';
 export const ATTR_ACQUIRE_DURATION = 'kysely.pool.acquire_duration_ms';
 export const ATTR_TRANSACTION_OUTCOME = 'kysely.transaction.outcome';
+export const ATTR_STREAM_OUTCOME = 'kysely.stream.outcome';
 
 export function buildQueryAttributes(
   ctx: QueryContext,
@@ -31,10 +36,14 @@ export function buildQueryAttributes(
     [ATTR_DB_OPERATION]: ctx.operation,
     [ATTR_PARAMETER_COUNT]: ctx.parameters.length,
   };
+  if (options.namespace !== undefined) attrs[ATTR_DB_NAMESPACE] = options.namespace;
+  if (options.serverAddress !== undefined) attrs[ATTR_SERVER_ADDRESS] = options.serverAddress;
+  if (options.serverPort !== undefined) attrs[ATTR_SERVER_PORT] = options.serverPort;
   if (options.summary) attrs[ATTR_DB_QUERY_SUMMARY] = ctx.summary;
   if (ctx.text !== undefined) attrs[ATTR_DB_QUERY_TEXT] = ctx.text;
   if (options.tables && ctx.primaryTable !== undefined) attrs[ATTR_DB_COLLECTION] = ctx.primaryTable;
   if (options.tables && ctx.tables.length > 0) attrs[ATTR_TABLES] = ctx.tables;
+  if (options.tables && ctx.tablesTruncated) attrs[ATTR_TABLES_TRUNCATED] = true;
   if (options.fingerprint && ctx.fingerprint && !ctx.sanitizationError) {
     attrs[ATTR_DB_QUERY_FINGERPRINT] = ctx.fingerprint;
   }

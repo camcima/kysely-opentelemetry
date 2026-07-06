@@ -1,4 +1,4 @@
-import { trace } from '@opentelemetry/api';
+import { metrics, trace } from '@opentelemetry/api';
 import type {
   DatabaseIntrospector,
   Dialect,
@@ -16,17 +16,33 @@ import { detectDbSystem } from './otel/system.js';
 import { VERSION } from './version.js';
 
 export class ObservedDialect implements Dialect {
+  private readonly options: NormalizedOptions;
+
+  /**
+   * @param inner The dialect to instrument.
+   * @param options Instrumentation options. Note: `enabled: false` is honored
+   * only by the `observeDialect()` factory — constructing an `ObservedDialect`
+   * directly always instruments. When `observeDialect()` is called on an
+   * already-wrapped dialect, the existing wrapper is returned and these
+   * options are ignored.
+   */
   constructor(
     private readonly inner: Dialect,
-    private readonly options: NormalizedOptions,
-  ) {}
+    options: KyselyOtelOptions = {},
+  ) {
+    this.options = normalizeOptions(options);
+  }
 
   createDriver(): Driver {
+    const tracerProvider = this.options.tracerProvider ?? trace;
+    const meterProvider = this.options.meterProvider ?? metrics;
     const deps: ObservedConnectionDeps = {
       options: this.options,
       analyze: createAnalyzer(this.options),
-      tracer: trace.getTracer('kysely-opentelemetry', VERSION),
-      ...(this.options.metrics && { histogram: createDurationHistogram() }),
+      tracer: tracerProvider.getTracer('kysely-opentelemetry', VERSION),
+      ...(this.options.metrics && {
+        histogram: createDurationHistogram(meterProvider.getMeter('kysely-opentelemetry', VERSION)),
+      }),
       dbSystem: this.options.dbSystem ?? detectDbSystem(this.inner),
     };
     return new ObservedDriver(this.inner.createDriver(), deps);
@@ -48,9 +64,10 @@ export class ObservedDialect implements Dialect {
 /**
  * Wrap a Kysely dialect with OpenTelemetry instrumentation.
  * With `enabled: false` the original dialect is returned untouched.
+ * Wrapping an already-observed dialect returns it unchanged.
  */
 export function observeDialect(dialect: Dialect, options?: KyselyOtelOptions): Dialect {
-  const normalized = normalizeOptions(options);
-  if (!normalized.enabled) return dialect;
-  return new ObservedDialect(dialect, normalized);
+  if (dialect instanceof ObservedDialect) return dialect;
+  if (!(options?.enabled ?? true)) return dialect;
+  return new ObservedDialect(dialect, options);
 }

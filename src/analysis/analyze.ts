@@ -10,6 +10,7 @@ import { extractTables, extractTablesFromRawSql } from './tables.js';
 export interface QueryAnalysis {
   readonly operation: string;
   readonly tables: string[];
+  readonly tablesTruncated: boolean;
   readonly primaryTable?: string;
   readonly summary: string;
   readonly fingerprint: string;
@@ -28,19 +29,27 @@ export type Analyzer = (compiledQuery: CompiledQuery) => QueryContext;
 
 const CACHE_SIZE = 10_000;
 
+/** SQL longer than this is analyzed but not cached: 10k huge keys would be a
+ *  real memory sink, and re-analysis cost is proportional to the string. */
+const MAX_CACHED_SQL_LENGTH = 32_768;
+
 /**
  * Builds an Analyzer that caches the sql-derived parts of a QueryContext
  * (everything except per-call parameters) in a bounded LRU keyed by the
- * compiled sql string. Identical query shapes with different bind values
- * hit the cache and only pay for re-attaching `parameters`.
+ * query kind plus compiled sql. Identical query shapes with different bind
+ * values hit the cache and only pay for re-attaching `parameters`; SQL over
+ * MAX_CACHED_SQL_LENGTH is analyzed but not cached, to bound memory.
  */
 export function createAnalyzer(options: NormalizedOptions): Analyzer {
   const cache = new LruCache<string, QueryAnalysis>(CACHE_SIZE);
   return (compiledQuery) => {
-    let analysis = cache.get(compiledQuery.sql);
+    // Key on kind + sql: a raw query and a builder query can compile to the
+    // identical SQL string yet analyze differently (isRaw, table extraction).
+    const key = `${compiledQuery.query.kind}\0${compiledQuery.sql}`;
+    let analysis = cache.get(key);
     if (!analysis) {
       analysis = analyzeSql(compiledQuery, options);
-      cache.set(compiledQuery.sql, analysis);
+      if (compiledQuery.sql.length <= MAX_CACHED_SQL_LENGTH) cache.set(key, analysis);
     }
     return { ...analysis, sql: compiledQuery.sql, parameters: compiledQuery.parameters };
   };
@@ -50,11 +59,12 @@ function analyzeSql(compiledQuery: CompiledQuery, options: NormalizedOptions): Q
   const { sql, query } = compiledQuery;
   const isRaw = query.kind === 'RawNode';
   const operation = operationName(query, sql);
-  const tables = options.tables
+  const extraction = options.tables
     ? isRaw
       ? extractTablesFromRawSql(sql)
       : extractTables(query)
-    : [];
+    : { tables: [], truncated: false };
+  const { tables } = extraction;
   // Frozen so a mutating consumer of ctx.tables cannot corrupt the shared
   // LRU entry returned by reference on every cache hit for this SQL.
   Object.freeze(tables);
@@ -79,6 +89,7 @@ function analyzeSql(compiledQuery: CompiledQuery, options: NormalizedOptions): Q
   return {
     operation,
     tables,
+    tablesTruncated: extraction.truncated,
     ...(tables[0] !== undefined && { primaryTable: tables[0] }),
     summary,
     fingerprint,

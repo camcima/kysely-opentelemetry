@@ -14,10 +14,11 @@ import {
   ATTR_ACQUIRE_DURATION,
   ATTR_AFFECTED_ROWS,
   ATTR_RETURNED_ROWS,
+  ATTR_STREAM_OUTCOME,
   buildQueryAttributes,
 } from './otel/attributes.js';
 import { recordDuration } from './otel/metrics.js';
-import { recordError, warnOnce } from './otel/spans.js';
+import { recordError, warnLimited } from './otel/spans.js';
 
 export interface ObservedConnectionDeps {
   readonly options: NormalizedOptions;
@@ -40,8 +41,14 @@ export class ObservedConnection implements DatabaseConnection {
    *  undefined, which exactOptionalPropertyTypes forbids on `?:` fields. */
   transactionSpan: Span | undefined = undefined;
   transactionContext: Context | undefined = undefined;
+  /** Span active when the transaction began; when the active span at query
+   *  time differs, the user opened their own span inside the callback. */
+  transactionParentSpan: Span | undefined = undefined;
   /** Set by ObservedDriver on acquire; consumed by the first query span. */
   acquireDurationMs: number | undefined = undefined;
+  /** endSpan closures of streams still open on this connection; drained by
+   *  endOpenStreamSpans() when the lease ends (abandoned manual iterators). */
+  readonly #openStreamEnders = new Set<(error?: unknown, forced?: boolean) => void>();
 
   // Optional Kysely 0.29 members, forwarded only when the inner connection has them.
   cancelQuery?: NonNullable<DatabaseConnection['cancelQuery']>;
@@ -95,17 +102,29 @@ export class ObservedConnection implements DatabaseConnection {
     let rowCount = 0;
     let ended = false;
 
-    const endSpan = (error?: unknown): void => {
+    const endSpan = (error?: unknown, forced = false): void => {
       if (ended) return;
       ended = true;
+      this.#openStreamEnders.delete(endSpan);
       try {
         if (error === undefined) {
           try {
             span.setAttribute(ATTR_RETURNED_ROWS, rowCount);
           } catch (e) {
-            warnOnce(e);
+            warnLimited('failed to set stream row-count attribute', e);
           }
-          this.finishSuccess(ctx, startTime);
+          if (forced) {
+            try {
+              span.setAttribute(ATTR_STREAM_OUTCOME, 'released_unfinished');
+            } catch (e) {
+              warnLimited('failed to set stream outcome attribute', e);
+            }
+            // No metric on forced close: an abandoned stream has no meaningful
+            // operation duration; recording lease-time as a success would pollute
+            // the db.client.operation.duration histogram.
+          } else {
+            this.finishSuccess(ctx, startTime);
+          }
         } else {
           this.finishFailure(span, ctx, startTime, error);
         }
@@ -113,6 +132,7 @@ export class ObservedConnection implements DatabaseConnection {
         span.end();
       }
     };
+    this.#openStreamEnders.add(endSpan);
 
     return {
       [Symbol.asyncIterator]() {
@@ -138,17 +158,27 @@ export class ObservedConnection implements DatabaseConnection {
         return { done: true, value: undefined };
       },
       async throw(error?: unknown): Promise<IteratorResult<QueryResult<R>>> {
-        endSpan(error ?? new Error('stream aborted'));
-        if (inner.throw) return inner.throw(error);
-        throw error;
+        const reason = error ?? new Error('stream aborted');
+        endSpan(reason);
+        if (inner.throw) return inner.throw(reason);
+        throw reason;
       },
     };
+  }
+
+  /** Defensive backstop: a stream span must never outlive its connection
+   *  lease. Called by ObservedDriver.releaseConnection. */
+  endOpenStreamSpans(): void {
+    for (const end of [...this.#openStreamEnders]) end(undefined, true);
   }
 
   private startQuery(compiledQuery: CompiledQuery): StartedQuery | undefined {
     try {
       const ctx = this.deps.analyze(compiledQuery);
-      const parent = this.transactionContext ?? context.active();
+      if (this.deps.options.shouldObserve && !safeShouldObserve(this.deps.options.shouldObserve, ctx)) {
+        return undefined;
+      }
+      const parent = this.pickParent();
       const attributes = buildQueryAttributes(ctx, this.deps.dbSystem, this.deps.options);
       if (this.acquireDurationMs !== undefined) {
         attributes[ATTR_ACQUIRE_DURATION] = this.acquireDurationMs;
@@ -161,18 +191,34 @@ export class ObservedConnection implements DatabaseConnection {
       );
       return { span, ctx, spanContext: trace.setSpan(parent, span), startTime: performance.now() };
     } catch (error) {
-      warnOnce(error);
+      warnLimited('query span creation failed (query executed unobserved)', error);
       return undefined;
     }
+  }
+
+  /** Inside a transaction, parent queries to the TRANSACTION span — unless
+   *  the user opened their own span since BEGIN, in which case their
+   *  hierarchy wins (the TRANSACTION span can never be in the ambient
+   *  context, so the two lineages cannot be combined). */
+  private pickParent(): Context {
+    const active = context.active();
+    if (this.transactionContext === undefined) return active;
+    return trace.getSpan(active) === this.transactionParentSpan ? this.transactionContext : active;
   }
 
   private finishSuccess(ctx: QueryContext, startTime: number): void {
     try {
       if (this.deps.histogram) {
-        recordDuration(this.deps.histogram, ctx, this.deps.dbSystem, performance.now() - startTime);
+        recordDuration(
+          this.deps.histogram,
+          ctx,
+          this.deps.dbSystem,
+          this.deps.options,
+          performance.now() - startTime,
+        );
       }
     } catch (error) {
-      warnOnce(error);
+      warnLimited('failed to record duration metric', error);
     }
   }
 
@@ -184,13 +230,25 @@ export class ObservedConnection implements DatabaseConnection {
           this.deps.histogram,
           ctx,
           this.deps.dbSystem,
+          this.deps.options,
           performance.now() - startTime,
           errType,
         );
       }
     } catch (err) {
-      warnOnce(err);
+      warnLimited('failed to record query failure telemetry', err);
     }
+  }
+}
+
+function safeShouldObserve(
+  filter: (ctx: QueryContext) => boolean,
+  ctx: QueryContext,
+): boolean {
+  try {
+    return filter(ctx);
+  } catch {
+    return true; // fail-open: a broken filter must not disable instrumentation
   }
 }
 
@@ -201,6 +259,6 @@ function setResultAttributes(span: Span, result: QueryResult<unknown>): void {
       span.setAttribute(ATTR_AFFECTED_ROWS, Number(result.numAffectedRows));
     }
   } catch (error) {
-    warnOnce(error);
+    warnLimited('failed to set result attributes', error);
   }
 }

@@ -1,3 +1,4 @@
+import { metrics, trace } from '@opentelemetry/api';
 import { describe, expect, it } from 'vitest';
 import { normalizeOptions } from '../../src/options.js';
 
@@ -19,14 +20,36 @@ describe('normalizeOptions', () => {
     expect(opts.dbSystem).toBeUndefined();
     expect(opts.attributes).toBeUndefined();
     expect(opts.redact).toBeUndefined();
+    expect(opts.shouldObserve).toBeUndefined();
+    expect(opts.namespace).toBeUndefined();
+    expect(opts.serverAddress).toBeUndefined();
+    expect(opts.serverPort).toBeUndefined();
+    expect(opts.tracerProvider).toBeUndefined();
+    expect(opts.meterProvider).toBeUndefined();
   });
 
   it('honors overrides', () => {
     const redact = (sql: string) => sql;
-    const opts = normalizeOptions({ enabled: false, queryText: 'off', metrics: false, redact });
+    const shouldObserve = () => true;
+    const opts = normalizeOptions({
+      enabled: false,
+      queryText: 'off',
+      metrics: false,
+      redact,
+      shouldObserve,
+    });
     expect(opts.enabled).toBe(false);
     expect(opts.queryText).toBe('off');
     expect(opts.metrics).toBe(false);
     expect(opts.redact).toBe(redact);
+    expect(opts.shouldObserve).toBe(shouldObserve);
+  });
+
+  it('passes through an injected tracerProvider/meterProvider', () => {
+    const tracerProvider = trace.getTracerProvider();
+    const meterProvider = metrics.getMeterProvider();
+    const opts = normalizeOptions({ tracerProvider, meterProvider });
+    expect(opts.tracerProvider).toBe(tracerProvider);
+    expect(opts.meterProvider).toBe(meterProvider);
   });
 });
