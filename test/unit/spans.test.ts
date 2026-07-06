@@ -1,7 +1,7 @@
-import { SpanStatusCode, type Span } from '@opentelemetry/api';
+import { diag, SpanStatusCode, type Span } from '@opentelemetry/api';
 import { describe, expect, it, vi } from 'vitest';
 import { normalizeOptions } from '../../src/options.js';
-import { errorType, recordError } from '../../src/otel/spans.js';
+import { errorType, recordError, warnOnce } from '../../src/otel/spans.js';
 
 function fakeSpan() {
   return {
@@ -26,6 +26,13 @@ describe('errorType', () => {
     expect(errorType('boom')).toBe('_OTHER');
     expect(errorType(undefined)).toBe('_OTHER');
   });
+
+  it('falls through non-string or empty code to the constructor name', () => {
+    const numeric = Object.assign(new TypeError('x'), { code: 500 });
+    expect(errorType(numeric)).toBe('TypeError');
+    const empty = Object.assign(new RangeError('x'), { code: '' });
+    expect(errorType(empty)).toBe('RangeError');
+  });
 });
 
 describe('recordError', () => {
@@ -43,5 +50,14 @@ describe('recordError', () => {
     const span = fakeSpan();
     recordError(span, new Error('x'), normalizeOptions({ recordExceptions: false }));
     expect(span.recordException).not.toHaveBeenCalled();
+  });
+});
+
+describe('warnOnce', () => {
+  it('routes to diag.warn (not console) and caps at 10 warnings', () => {
+    const spy = vi.spyOn(diag, 'warn').mockImplementation(() => {});
+    for (let i = 0; i < 12; i++) warnOnce(new Error(`boom ${i}`));
+    expect(spy).toHaveBeenCalledTimes(10); // 11th and 12th are suppressed
+    spy.mockRestore();
   });
 });
