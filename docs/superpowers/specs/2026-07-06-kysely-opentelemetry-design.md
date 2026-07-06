@@ -102,7 +102,7 @@ interface KyselyOtelOptions {
 
 `QueryContext` (exposed to the `attributes` hook) carries: `sql`, `parameters` (readonly, count only used internally), `operation`, `tables`, `primaryTable`, `summary`, `fingerprint`, `hash`, `isRaw`.
 
-`queryText` modes: `parameterized` = compiled SQL as-is (already placeholder-parameterized by Kysely); `sanitized` (default) = additionally scrub literals from raw fragments; `off` = no `db.query.text` at all.
+`queryText` modes: `parameterized` = compiled SQL as-is (already placeholder-parameterized by Kysely); `sanitized` (default) = additionally scrub literals from raw fragments; `off` = no `db.query.text` at all. The `redact` hook runs last, whenever query text would be emitted (both `sanitized` and `parameterized` modes); it does not affect the fingerprint.
 
 ## 5. Emitted telemetry
 
@@ -122,7 +122,8 @@ interface KyselyOtelOptions {
 | `kysely.query.raw` | `true` when root node is `RawNode` (analysis best-effort) |
 | `kysely.query.sanitization_error` | `true` when sanitizer failed (then `db.query.text` omitted) |
 | `kysely.pool.acquire_duration_ms` | first query span after acquisition only |
-| `db.response.returned_rows` | on completion |
+| `db.response.returned_rows` | on completion: `result.rows.length` |
+| `kysely.query.affected_rows` | on completion, mutations only: `Number(result.numAffectedRows)` when defined |
 | `error.type` | on failure: error constructor name, or DB error `code` when exposed |
 
 Transaction span: name `TRANSACTION`, kind CLIENT, `db.system.name`, `kysely.transaction.outcome`.
