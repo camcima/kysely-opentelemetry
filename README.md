@@ -105,7 +105,7 @@ All options are optional; every default is production-safe as shipped.
 | `hash` | `boolean` | `true` | Emit `db.query.hash`. |
 | `metrics` | `boolean` | `true` | Emit the `db.client.operation.duration` histogram. |
 | `transactions` | `boolean` | `true` | Emit `TRANSACTION` spans around `db.transaction()`. |
-| `recordExceptions` | `boolean` | `true` | Call `span.recordException()` on query failure (in addition to setting `ERROR` status and `error.type`). |
+| `recordExceptions` | `boolean` | `true` | Call `span.recordException()` on query failure (in addition to setting `ERROR` status and `error.type`). This records the driver's own error (message + stack), which may echo a submitted value — see [Safety model](#safety-model). The span status `message` is always set to `error.message` regardless of this option. |
 | `attributes` | `(ctx: QueryContext) => Attributes` | — | Custom-attribute escape hatch, merged onto the span after all built-in attributes. |
 | `redact` | `(sql: string) => string` | — | Extra query-text scrubbing, applied last, in every emitting mode. |
 
@@ -216,9 +216,10 @@ Each layer instruments a different boundary — this library instruments Kysely'
 ## Safety model
 
 - **Sanitized by default.** `queryText: 'sanitized'` is the default; no code path in this library requires you to opt out of safety to get useful telemetry.
-- **No parameter capture, ever.** Bind parameter values are never emitted, in any mode, through any attribute, span event, or metric — there is no option to enable it. Only `kysely.query.parameter_count` (a number) is emitted.
+- **No parameter capture, ever.** Bind parameter values that this library reads (the parameters array, row data) are never emitted, in any mode, through any attribute, span event, or metric — there is no option to enable it. Only `kysely.query.parameter_count` (a number) is emitted.
 - **Safe failure.** If the fingerprint sanitizer cannot process a query's SQL, `db.query.text` is omitted and `kysely.query.sanitization_error = true` is set instead of emitting unsanitized text.
 - **Instrumentation never breaks a query.** Every analysis and OTel call is wrapped; if instrumentation itself throws internally, the query still executes un-instrumented and a rate-limited `diag.warn` (OpenTelemetry diagnostics, never `console`) reports it. Query errors are always rethrown to the caller unchanged — this library never wraps, swallows, or alters them.
+- **Driver error messages are a separate channel.** On query/transaction failure, the span status `message` is always set to `error.message` from the database driver, and (when `recordExceptions: true`, the default) `span.recordException(error)` records that same driver error (message + stack) as a span event. This is the driver's own error, not something this library extracts — but driver error text (e.g. Postgres constraint/type-violation messages) can echo a submitted value. If you have strict data-governance requirements, set `recordExceptions: false` to drop the exception event; note the span status `message` still carries `error.message` regardless, since there is no toggle to suppress it in v0.1.
 
 ### Known limitations
 
