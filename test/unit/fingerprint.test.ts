@@ -62,4 +62,12 @@ describe('fingerprintSql', () => {
     expect(fingerprintSql('SELECT *\n  FROM   orders\n WHERE id = 1'))
       .toBe('SELECT * FROM orders WHERE id = ?');
   });
+
+  it('does not catastrophically backtrack on an unterminated quote with backslashes', () => {
+    const evil = "SELECT '" + '\\'.repeat(100);
+    const start = performance.now();
+    const result = fingerprintSql(evil);
+    expect(performance.now() - start).toBeLessThan(500);
+    expect(typeof result).toBe('string');
+  });
 });
