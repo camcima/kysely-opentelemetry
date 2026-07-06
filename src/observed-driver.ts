@@ -2,7 +2,7 @@ import { context, SpanKind, trace } from '@opentelemetry/api';
 import type { DatabaseConnection, Driver, TransactionSettings } from 'kysely';
 import { ObservedConnection, type ObservedConnectionDeps } from './observed-connection.js';
 import { ATTR_DB_SYSTEM, ATTR_TRANSACTION_OUTCOME } from './otel/attributes.js';
-import { recordError, warnOnce } from './otel/spans.js';
+import { recordError, warnLimited } from './otel/spans.js';
 
 export class ObservedDriver implements Driver {
   readonly #wrappers = new WeakMap<DatabaseConnection, ObservedConnection>();
@@ -109,7 +109,7 @@ export class ObservedDriver implements Driver {
       wrapper.transactionSpan = span;
       wrapper.transactionContext = trace.setSpan(parent, span);
     } catch (error) {
-      warnOnce(error);
+      warnLimited('failed to start transaction span', error);
     }
   }
 
@@ -126,7 +126,7 @@ export class ObservedDriver implements Driver {
       span.setAttribute(ATTR_TRANSACTION_OUTCOME, outcome);
       if (error !== undefined) recordError(span, error, this.deps.options);
     } catch (err) {
-      warnOnce(err);
+      warnLimited('failed to finalize transaction span', err);
     } finally {
       span.end();
     }

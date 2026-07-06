@@ -17,7 +17,7 @@ import {
   buildQueryAttributes,
 } from './otel/attributes.js';
 import { recordDuration } from './otel/metrics.js';
-import { recordError, warnOnce } from './otel/spans.js';
+import { recordError, warnLimited } from './otel/spans.js';
 
 export interface ObservedConnectionDeps {
   readonly options: NormalizedOptions;
@@ -103,7 +103,7 @@ export class ObservedConnection implements DatabaseConnection {
           try {
             span.setAttribute(ATTR_RETURNED_ROWS, rowCount);
           } catch (e) {
-            warnOnce(e);
+            warnLimited('failed to set stream row-count attribute', e);
           }
           this.finishSuccess(ctx, startTime);
         } else {
@@ -161,7 +161,7 @@ export class ObservedConnection implements DatabaseConnection {
       );
       return { span, ctx, spanContext: trace.setSpan(parent, span), startTime: performance.now() };
     } catch (error) {
-      warnOnce(error);
+      warnLimited('query span creation failed (query executed unobserved)', error);
       return undefined;
     }
   }
@@ -172,7 +172,7 @@ export class ObservedConnection implements DatabaseConnection {
         recordDuration(this.deps.histogram, ctx, this.deps.dbSystem, performance.now() - startTime);
       }
     } catch (error) {
-      warnOnce(error);
+      warnLimited('failed to record duration metric', error);
     }
   }
 
@@ -189,7 +189,7 @@ export class ObservedConnection implements DatabaseConnection {
         );
       }
     } catch (err) {
-      warnOnce(err);
+      warnLimited('failed to record query failure telemetry', err);
     }
   }
 }
@@ -201,6 +201,6 @@ function setResultAttributes(span: Span, result: QueryResult<unknown>): void {
       span.setAttribute(ATTR_AFFECTED_ROWS, Number(result.numAffectedRows));
     }
   } catch (error) {
-    warnOnce(error);
+    warnLimited('failed to set result attributes', error);
   }
 }
