@@ -12,6 +12,18 @@ describe('fingerprintSql', () => {
       .toBe('SELECT * FROM t WHERE name = ?');
   });
 
+  it('scrubs backslash-escaped quotes (MySQL) without leaking', () => {
+    expect(fingerprintSql("SELECT * FROM t WHERE name = 'O\\'Brien'"))
+      .toBe('SELECT * FROM t WHERE name = ?');
+    expect(fingerprintSql("INSERT INTO t (pw) VALUES ('p\\'ssw0rd123secret')"))
+      .toBe('INSERT INTO t (pw) VALUES (?)');
+  });
+
+  it('leaves double-quoted text intact (identifiers in postgres/sqlite)', () => {
+    expect(fingerprintSql('SELECT * FROM "orders" WHERE id = 1'))
+      .toBe('SELECT * FROM "orders" WHERE id = ?');
+  });
+
   it('replaces dollar-quoted strings (tagged and untagged)', () => {
     expect(fingerprintSql('SELECT $$secret value$$')).toBe('SELECT ?');
     expect(fingerprintSql('SELECT $tag$ nested $$ inside $tag$')).toBe('SELECT ?');

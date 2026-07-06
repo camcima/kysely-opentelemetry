@@ -4,8 +4,13 @@
  * fragments. Order matters: strings before placeholders before numbers
  * ($1 must not be half-eaten by the numeric rule).
  */
+// Double-quoted text is intentionally NOT scrubbed: in Postgres/SQLite it
+// delimits identifiers (e.g. "orders"), and scrubbing would corrupt the
+// fingerprint and table extraction. Values must reach us as bind parameters
+// (Kysely's default) or single-quoted literals; a MySQL "..."-quoted string
+// literal in hand-written raw SQL is a known, documented limitation.
 const DOLLAR_QUOTED = /\$([A-Za-z_][A-Za-z0-9_]*)?\$[\s\S]*?\$\1\$/g;
-const SINGLE_QUOTED = /'(?:''|[^'])*'/g;
+const SINGLE_QUOTED = /'(?:''|\\.|[^'])*'/g;
 const UUID = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi;
 const HEX = /\b0x[0-9a-f]+\b/gi;
 const PLACEHOLDER = /\$\d+|@p\d+\b/gi;
