@@ -1,4 +1,4 @@
-import type { Attributes } from '@opentelemetry/api';
+import type { Attributes, MeterProvider, TracerProvider } from '@opentelemetry/api';
 import type { QueryContext } from './analysis/analyze.js';
 
 export interface KyselyOtelOptions {
@@ -30,6 +30,10 @@ export interface KyselyOtelOptions {
   attributes?: (ctx: QueryContext) => Attributes;
   /** Extra query-text scrubbing, runs last in all emitting modes. Throwing omits db.query.text. */
   redact?: (sql: string) => string;
+  /** Use this TracerProvider instead of the global @opentelemetry/api registry. */
+  tracerProvider?: TracerProvider;
+  /** Use this MeterProvider instead of the global @opentelemetry/api registry. */
+  meterProvider?: MeterProvider;
 }
 
 export interface NormalizedOptions {
@@ -49,6 +53,8 @@ export interface NormalizedOptions {
   readonly recordExceptions: boolean;
   readonly attributes?: (ctx: QueryContext) => Attributes;
   readonly redact?: (sql: string) => string;
+  readonly tracerProvider?: TracerProvider;
+  readonly meterProvider?: MeterProvider;
 }
 
 export function normalizeOptions(options: KyselyOtelOptions = {}): NormalizedOptions {
@@ -69,5 +75,7 @@ export function normalizeOptions(options: KyselyOtelOptions = {}): NormalizedOpt
     recordExceptions: options.recordExceptions ?? true,
     ...(options.attributes !== undefined && { attributes: options.attributes }),
     ...(options.redact !== undefined && { redact: options.redact }),
+    ...(options.tracerProvider !== undefined && { tracerProvider: options.tracerProvider }),
+    ...(options.meterProvider !== undefined && { meterProvider: options.meterProvider }),
   };
 }

@@ -1,7 +1,6 @@
-import { metrics, ValueType, type Attributes, type Histogram } from '@opentelemetry/api';
+import { ValueType, type Attributes, type Histogram, type Meter } from '@opentelemetry/api';
 import type { QueryContext } from '../analysis/analyze.js';
 import type { NormalizedOptions } from '../options.js';
-import { VERSION } from '../version.js';
 import {
   ATTR_DB_COLLECTION,
   ATTR_DB_NAMESPACE,
@@ -14,18 +13,15 @@ import {
 } from './attributes.js';
 
 /** Semconv db.client.operation.duration histogram (seconds). */
-export function createDurationHistogram(): Histogram {
-  return metrics.getMeter('kysely-opentelemetry', VERSION).createHistogram(
-    'db.client.operation.duration',
-    {
-      description: 'Duration of database client operations.',
-      unit: 's',
-      valueType: ValueType.DOUBLE,
-      advice: {
-        explicitBucketBoundaries: [0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5, 10],
-      },
+export function createDurationHistogram(meter: Meter): Histogram {
+  return meter.createHistogram('db.client.operation.duration', {
+    description: 'Duration of database client operations.',
+    unit: 's',
+    valueType: ValueType.DOUBLE,
+    advice: {
+      explicitBucketBoundaries: [0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5, 10],
     },
-  );
+  });
 }
 
 export function recordDuration(

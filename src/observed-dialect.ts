@@ -1,4 +1,4 @@
-import { trace } from '@opentelemetry/api';
+import { metrics, trace } from '@opentelemetry/api';
 import type {
   DatabaseIntrospector,
   Dialect,
@@ -26,11 +26,15 @@ export class ObservedDialect implements Dialect {
   }
 
   createDriver(): Driver {
+    const tracerProvider = this.options.tracerProvider ?? trace;
+    const meterProvider = this.options.meterProvider ?? metrics;
     const deps: ObservedConnectionDeps = {
       options: this.options,
       analyze: createAnalyzer(this.options),
-      tracer: trace.getTracer('kysely-opentelemetry', VERSION),
-      ...(this.options.metrics && { histogram: createDurationHistogram() }),
+      tracer: tracerProvider.getTracer('kysely-opentelemetry', VERSION),
+      ...(this.options.metrics && {
+        histogram: createDurationHistogram(meterProvider.getMeter('kysely-opentelemetry', VERSION)),
+      }),
       dbSystem: this.options.dbSystem ?? detectDbSystem(this.inner),
     };
     return new ObservedDriver(this.inner.createDriver(), deps);

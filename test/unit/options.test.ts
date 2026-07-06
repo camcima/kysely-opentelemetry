@@ -1,3 +1,4 @@
+import { metrics, trace } from '@opentelemetry/api';
 import { describe, expect, it } from 'vitest';
 import { normalizeOptions } from '../../src/options.js';
 
@@ -22,6 +23,8 @@ describe('normalizeOptions', () => {
     expect(opts.namespace).toBeUndefined();
     expect(opts.serverAddress).toBeUndefined();
     expect(opts.serverPort).toBeUndefined();
+    expect(opts.tracerProvider).toBeUndefined();
+    expect(opts.meterProvider).toBeUndefined();
   });
 
   it('honors overrides', () => {
@@ -31,5 +34,13 @@ describe('normalizeOptions', () => {
     expect(opts.queryText).toBe('off');
     expect(opts.metrics).toBe(false);
     expect(opts.redact).toBe(redact);
+  });
+
+  it('passes through an injected tracerProvider/meterProvider', () => {
+    const tracerProvider = trace.getTracerProvider();
+    const meterProvider = metrics.getMeterProvider();
+    const opts = normalizeOptions({ tracerProvider, meterProvider });
+    expect(opts.tracerProvider).toBe(tracerProvider);
+    expect(opts.meterProvider).toBe(meterProvider);
   });
 });

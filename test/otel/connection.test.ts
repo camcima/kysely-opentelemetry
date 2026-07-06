@@ -1,4 +1,4 @@
-import { SpanKind, SpanStatusCode, trace } from '@opentelemetry/api';
+import { metrics, SpanKind, SpanStatusCode, trace } from '@opentelemetry/api';
 import { CompiledQuery } from 'kysely';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createAnalyzer } from '../../src/analysis/analyze.js';
@@ -26,7 +26,7 @@ function makeConnection(script = (_cq: CompiledQuery) => ({ rows: [{ id: 1 }] })
     options,
     analyze: createAnalyzer(options),
     tracer: trace.getTracer('test'),
-    histogram: createDurationHistogram(),
+    histogram: createDurationHistogram(metrics.getMeter('test')),
     dbSystem: 'postgresql',
   });
   return { connection, inner };

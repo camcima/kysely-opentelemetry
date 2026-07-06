@@ -15,7 +15,7 @@ Peer requirements:
 | `kysely` | `>=0.27 <0.30` |
 | `@opentelemetry/api` | `>=1.8` |
 
-You also need a configured OpenTelemetry SDK in your process (this package only calls into `@opentelemetry/api`; it never creates a tracer/meter provider itself). If you don't have one yet, see [`@opentelemetry/sdk-node`](https://www.npmjs.com/package/@opentelemetry/sdk-node).
+You also need a configured OpenTelemetry SDK in your process (this package only calls into `@opentelemetry/api`; it never creates a tracer/meter provider itself). If you don't have one yet, see [`@opentelemetry/sdk-node`](https://www.npmjs.com/package/@opentelemetry/sdk-node). By default it uses the process-global tracer/meter registries; pass the `tracerProvider`/`meterProvider` options to route telemetry through explicit providers instead.
 
 ## Quick start
 
@@ -111,6 +111,8 @@ All options are optional; every default is production-safe as shipped.
 | `recordExceptions` | `boolean` | `true` | Call `span.recordException()` on query failure (in addition to setting `ERROR` status and `error.type`). This records the driver's own error (message + stack), which may echo a submitted value — see [Safety model](#safety-model). The span status `message` is always set to `error.message` regardless of this option. |
 | `attributes` | `(ctx: QueryContext) => Attributes` | — | Custom-attribute escape hatch, merged onto the span after all built-in attributes. |
 | `redact` | `(sql: string) => string` | — | Extra query-text scrubbing, applied last, in every emitting mode. |
+| `tracerProvider` | `TracerProvider` | global registry | Route spans through this provider instead of the global `@opentelemetry/api` registry. |
+| `meterProvider` | `MeterProvider` | global registry | Route the duration metric through this provider instead of the global registry. |
 
 ### The `attributes` hook
 
