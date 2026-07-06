@@ -89,7 +89,8 @@ export class ObservedDriver implements Driver {
     options?: Parameters<Driver['releaseConnection']>[1],
   ): Promise<void> {
     const wrapper = asWrapper(connection);
-    // Defensive: a transaction span must never outlive its connection lease.
+    // Defensive: spans must never outlive their connection lease.
+    wrapper?.endOpenStreamSpans();
     if (wrapper?.transactionSpan) this.endTransactionSpan(wrapper, 'released_unfinished');
     return this.inner.releaseConnection(unwrap(connection), options);
   }

@@ -42,6 +42,9 @@ export class ObservedConnection implements DatabaseConnection {
   transactionContext: Context | undefined = undefined;
   /** Set by ObservedDriver on acquire; consumed by the first query span. */
   acquireDurationMs: number | undefined = undefined;
+  /** endSpan closures of streams still open on this connection; drained by
+   *  endOpenStreamSpans() when the lease ends (abandoned manual iterators). */
+  readonly #openStreamEnders = new Set<(error?: unknown) => void>();
 
   // Optional Kysely 0.29 members, forwarded only when the inner connection has them.
   cancelQuery?: NonNullable<DatabaseConnection['cancelQuery']>;
@@ -98,6 +101,7 @@ export class ObservedConnection implements DatabaseConnection {
     const endSpan = (error?: unknown): void => {
       if (ended) return;
       ended = true;
+      this.#openStreamEnders.delete(endSpan);
       try {
         if (error === undefined) {
           try {
@@ -113,6 +117,7 @@ export class ObservedConnection implements DatabaseConnection {
         span.end();
       }
     };
+    this.#openStreamEnders.add(endSpan);
 
     return {
       [Symbol.asyncIterator]() {
@@ -138,11 +143,18 @@ export class ObservedConnection implements DatabaseConnection {
         return { done: true, value: undefined };
       },
       async throw(error?: unknown): Promise<IteratorResult<QueryResult<R>>> {
-        endSpan(error ?? new Error('stream aborted'));
-        if (inner.throw) return inner.throw(error);
-        throw error;
+        const reason = error ?? new Error('stream aborted');
+        endSpan(reason);
+        if (inner.throw) return inner.throw(reason);
+        throw reason;
       },
     };
+  }
+
+  /** Defensive backstop: a stream span must never outlive its connection
+   *  lease. Called by ObservedDriver.releaseConnection. */
+  endOpenStreamSpans(): void {
+    for (const end of [...this.#openStreamEnders]) end();
   }
 
   private startQuery(compiledQuery: CompiledQuery): StartedQuery | undefined {

@@ -18,9 +18,12 @@ afterEach(async () => {
   await otel.teardown();
 });
 
-function makeDriver(overrides: KyselyOtelOptions = {}) {
+function makeDriver(
+  overrides: KyselyOtelOptions = {},
+  script: () => { rows: any[] } = () => ({ rows: [] }),
+) {
   const options = normalizeOptions(overrides);
-  const { driver: fakeDriver } = createFakeDialect(() => ({ rows: [] }));
+  const { driver: fakeDriver } = createFakeDialect(script);
   const driver = new ObservedDriver(fakeDriver, {
     options,
     analyze: createAnalyzer(options),
@@ -115,5 +118,17 @@ describe('ObservedDriver transaction spans', () => {
     await connection.executeQuery(SELECT);
     const querySpan = otel.spanExporter.getFinishedSpans().find((s) => s.name === 'SELECT orders')!;
     expect(querySpan.parentSpanContext).toBeUndefined();
+  });
+});
+
+describe('ObservedDriver stream span backstop', () => {
+  it('ends abandoned stream spans when the connection is released', async () => {
+    const { driver } = makeDriver({}, () => ({ rows: [{ id: 1 }, { id: 2 }] }));
+    const connection = (await driver.acquireConnection()) as ObservedConnection;
+    const iterator = connection.streamQuery(SELECT, 1);
+    await iterator.next(); // start the stream, then abandon it without return()
+    expect(otel.spanExporter.getFinishedSpans()).toHaveLength(0);
+    await driver.releaseConnection(connection);
+    expect(otel.spanExporter.getFinishedSpans()).toHaveLength(1);
   });
 });

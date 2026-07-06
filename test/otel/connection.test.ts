@@ -143,4 +143,14 @@ describe('ObservedConnection.streamQuery', () => {
     }
     expect(otel.spanExporter.getFinishedSpans()).toHaveLength(1);
   });
+
+  it('throw() without an argument raises a real Error, not undefined', async () => {
+    const { connection } = makeConnection(() => ({ rows: [{ id: 1 }, { id: 2 }] }));
+    const iterator = connection.streamQuery(SELECT, 1);
+    await iterator.next();
+    await expect(iterator.throw!()).rejects.toBeInstanceOf(Error);
+    const spans = otel.spanExporter.getFinishedSpans();
+    expect(spans).toHaveLength(1);
+    expect(spans[0]!.status.code).toBe(SpanStatusCode.ERROR);
+  });
 });
