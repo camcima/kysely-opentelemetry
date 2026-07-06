@@ -28,11 +28,16 @@ export type Analyzer = (compiledQuery: CompiledQuery) => QueryContext;
 
 const CACHE_SIZE = 10_000;
 
+/** SQL longer than this is analyzed but not cached: 10k huge keys would be a
+ *  real memory sink, and re-analysis cost is proportional to the string. */
+const MAX_CACHED_SQL_LENGTH = 32_768;
+
 /**
  * Builds an Analyzer that caches the sql-derived parts of a QueryContext
  * (everything except per-call parameters) in a bounded LRU keyed by the
- * compiled sql string. Identical query shapes with different bind values
- * hit the cache and only pay for re-attaching `parameters`.
+ * query kind plus compiled sql. Identical query shapes with different bind
+ * values hit the cache and only pay for re-attaching `parameters`; SQL over
+ * MAX_CACHED_SQL_LENGTH is analyzed but not cached, to bound memory.
  */
 export function createAnalyzer(options: NormalizedOptions): Analyzer {
   const cache = new LruCache<string, QueryAnalysis>(CACHE_SIZE);
@@ -43,7 +48,7 @@ export function createAnalyzer(options: NormalizedOptions): Analyzer {
     let analysis = cache.get(key);
     if (!analysis) {
       analysis = analyzeSql(compiledQuery, options);
-      cache.set(key, analysis);
+      if (compiledQuery.sql.length <= MAX_CACHED_SQL_LENGTH) cache.set(key, analysis);
     }
     return { ...analysis, sql: compiledQuery.sql, parameters: compiledQuery.parameters };
   };

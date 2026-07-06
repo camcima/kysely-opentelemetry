@@ -94,4 +94,18 @@ describe('createAnalyzer', () => {
     expect(freshAnalyze(raw).isRaw).toBe(true); // raw analyzed first, seeds the cache
     expect(freshAnalyze(builder).isRaw).toBe(false); // must NOT be served the raw entry
   });
+
+  it('does not cache very large sql (memory bound) but still analyzes it', () => {
+    const freshAnalyze = createAnalyzer(normalizeOptions());
+    const bigSql = `SELECT * FROM orders WHERE note = '${'x'.repeat(40_000)}'`;
+    const a = freshAnalyze(compileRaw(bigSql));
+    const b = freshAnalyze(compileRaw(bigSql));
+    expect(a.operation).toBe('SELECT');
+    expect(a.tables).toEqual(['orders']);
+    expect(a.tables).not.toBe(b.tables); // distinct analyses — not served from cache
+
+    const small = freshAnalyze(compile((db) => db.selectFrom('orders').selectAll()));
+    const smallAgain = freshAnalyze(compile((db) => db.selectFrom('orders').selectAll()));
+    expect(small.tables).toBe(smallAgain.tables); // small SQL still uses the cache
+  });
 });
