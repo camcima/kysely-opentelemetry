@@ -55,18 +55,25 @@ function analyzeSql(compiledQuery: CompiledQuery, options: NormalizedOptions): Q
       ? extractTablesFromRawSql(sql)
       : extractTables(query)
     : [];
+  // Frozen so a mutating consumer of ctx.tables cannot corrupt the shared
+  // LRU entry returned by reference on every cache hit for this SQL.
+  Object.freeze(tables);
   const summary = summarize(operation, tables);
 
   let fingerprint = '';
+  let hash = '';
   let sanitizationError = false;
   if (options.fingerprint || options.hash || options.queryText === 'sanitized') {
     try {
-      fingerprint = fingerprintSql(sql).slice(0, options.maxQueryTextLength);
+      const full = fingerprintSql(sql);
+      // Hash the UNtruncated fingerprint: truncating first would collide two
+      // distinct queries that share a prefix under a small maxQueryTextLength.
+      if (options.hash) hash = hashFingerprint(full);
+      fingerprint = full.slice(0, options.maxQueryTextLength);
     } catch {
       sanitizationError = true;
     }
   }
-  const hash = options.hash && !sanitizationError ? hashFingerprint(fingerprint) : '';
   const text = buildQueryText(sql, fingerprint, sanitizationError, options);
 
   return {
@@ -94,7 +101,8 @@ function buildQueryText(
     options.queryText === 'sanitized' ? fingerprint : sql.slice(0, options.maxQueryTextLength);
   if (options.redact) {
     try {
-      text = options.redact(text);
+      // Re-truncate: a redact hook may lengthen the string past the cap.
+      text = options.redact(text).slice(0, options.maxQueryTextLength);
     } catch {
       return undefined; // safe failure: omit rather than risk leaking
     }

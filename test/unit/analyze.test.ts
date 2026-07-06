@@ -72,4 +72,17 @@ describe('createAnalyzer', () => {
     expect(ctx.fingerprint.length).toBeLessThanOrEqual(10);
     expect((ctx.text ?? '').length).toBeLessThanOrEqual(10);
   });
+
+  it('hashes the full fingerprint, not the truncated one (no prefix collisions)', () => {
+    const analyzeShort = createAnalyzer(normalizeOptions({ maxQueryTextLength: 12 }));
+    const a = analyzeShort(compile((db) => db.selectFrom('orders_alpha').selectAll()));
+    const b = analyzeShort(compile((db) => db.selectFrom('orders_beta').selectAll()));
+    expect(a.fingerprint).toBe(b.fingerprint); // both truncated to the same 12-char prefix
+    expect(a.hash).not.toBe(b.hash); // but hashes differ (computed pre-truncation)
+  });
+
+  it('freezes the cached tables array to protect the LRU', () => {
+    const ctx = analyze(compile((db) => db.selectFrom('orders').selectAll()));
+    expect(Object.isFrozen(ctx.tables)).toBe(true);
+  });
 });
