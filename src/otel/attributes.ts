@@ -41,7 +41,8 @@ export function buildQueryAttributes(
   if (options.serverPort !== undefined) attrs[ATTR_SERVER_PORT] = options.serverPort;
   if (options.summary) attrs[ATTR_DB_QUERY_SUMMARY] = ctx.summary;
   if (ctx.text !== undefined) attrs[ATTR_DB_QUERY_TEXT] = ctx.text;
-  if (options.tables && ctx.primaryTable !== undefined) attrs[ATTR_DB_COLLECTION] = ctx.primaryTable;
+  if (options.tables && ctx.primaryTable !== undefined)
+    attrs[ATTR_DB_COLLECTION] = ctx.primaryTable;
   if (options.tables && ctx.tables.length > 0) attrs[ATTR_TABLES] = ctx.tables;
   if (options.tables && ctx.tablesTruncated) attrs[ATTR_TABLES_TRUNCATED] = true;
   if (options.fingerprint && ctx.fingerprint && !ctx.sanitizationError) {

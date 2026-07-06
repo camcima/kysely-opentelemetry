@@ -4,6 +4,7 @@
   "description": "OpenTelemetry instrumentation for Kysely: semconv-compliant spans and metrics with stable query grouping keys",
   "license": "MIT",
   "type": "module",
+  "packageManager": "pnpm@10.17.0",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
   "types": "./dist/index.d.cts",
@@ -41,13 +42,23 @@
     "test:unit": "vitest run test/unit test/otel",
     "test:integration": "vitest run test/integration",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint src test"
+    "lint": "eslint src test",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "release": "release-it",
+    "prepublishOnly": "pnpm run build",
+    "prepare": "lefthook install",
+    "security:audit": "pnpm audit --prod",
+    "security:secrets": "gitleaks detect --no-banner"
   },
   "peerDependencies": {
     "@opentelemetry/api": ">=1.8",
     "kysely": ">=0.27 <0.30"
   },
   "devDependencies": {
+    "@commitlint/cli": "^21.2.0",
+    "@commitlint/config-conventional": "^21.2.0",
+    "@eslint/js": "^10.0.1",
     "@opentelemetry/api": "^1.9.1",
     "@opentelemetry/context-async-hooks": "^2.9.0",
     "@opentelemetry/sdk-metrics": "^2.9.0",
@@ -59,15 +70,22 @@
     "@types/pg": "^8.20.0",
     "better-sqlite3": "^12.11.1",
     "eslint": "^10.6.0",
+    "eslint-config-prettier": "^10.1.8",
     "kysely": "0.29.3",
+    "lefthook": "^2.1.9",
     "mysql2": "^3.22.5",
     "pg": "^8.22.0",
+    "prettier": "^3.9.4",
+    "release-it": "^20.2.1",
     "tsup": "^8.5.1",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.62.1",
     "vitest": "^4.1.10"
   },
   "pnpm": {
-    "onlyBuiltDependencies": ["better-sqlite3"]
+    "onlyBuiltDependencies": [
+      "better-sqlite3",
+      "lefthook"
+    ]
   }
 }

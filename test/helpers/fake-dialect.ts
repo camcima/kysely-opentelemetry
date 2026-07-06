@@ -52,7 +52,10 @@ export class FakeDriver implements Driver {
     return this.connection;
   }
 
-  async beginTransaction(connection: DatabaseConnection, _settings: TransactionSettings): Promise<void> {
+  async beginTransaction(
+    connection: DatabaseConnection,
+    _settings: TransactionSettings,
+  ): Promise<void> {
     this.calls.push(`begin:${connection === this.connection ? 'inner' : 'WRAPPED'}`);
   }
 

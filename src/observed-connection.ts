@@ -175,7 +175,10 @@ export class ObservedConnection implements DatabaseConnection {
   private startQuery(compiledQuery: CompiledQuery): StartedQuery | undefined {
     try {
       const ctx = this.deps.analyze(compiledQuery);
-      if (this.deps.options.shouldObserve && !safeShouldObserve(this.deps.options.shouldObserve, ctx)) {
+      if (
+        this.deps.options.shouldObserve &&
+        !safeShouldObserve(this.deps.options.shouldObserve, ctx)
+      ) {
         return undefined;
       }
       const parent = this.pickParent();
@@ -241,10 +244,7 @@ export class ObservedConnection implements DatabaseConnection {
   }
 }
 
-function safeShouldObserve(
-  filter: (ctx: QueryContext) => boolean,
-  ctx: QueryContext,
-): boolean {
+function safeShouldObserve(filter: (ctx: QueryContext) => boolean, ctx: QueryContext): boolean {
   try {
     return filter(ctx);
   } catch {

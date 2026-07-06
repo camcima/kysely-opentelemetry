@@ -34,7 +34,13 @@ describe('buildQueryAttributes', () => {
   });
 
   it('honors feature toggles', () => {
-    const { attrs } = attrsFor({ summary: false, tables: false, hash: false, fingerprint: false, queryText: 'off' });
+    const { attrs } = attrsFor({
+      summary: false,
+      tables: false,
+      hash: false,
+      fingerprint: false,
+      queryText: 'off',
+    });
     expect(attrs['db.query.summary']).toBeUndefined();
     expect(attrs['db.collection.name']).toBeUndefined();
     expect(attrs['kysely.query.tables']).toBeUndefined();
@@ -56,7 +62,11 @@ describe('buildQueryAttributes', () => {
   });
 
   it('emits connection-level attributes when configured, omits them by default', () => {
-    const configured = attrsFor({ namespace: 'shop', serverAddress: 'db.internal', serverPort: 5432 });
+    const configured = attrsFor({
+      namespace: 'shop',
+      serverAddress: 'db.internal',
+      serverPort: 5432,
+    });
     expect(configured.attrs['db.namespace']).toBe('shop');
     expect(configured.attrs['server.address']).toBe('db.internal');
     expect(configured.attrs['server.port']).toBe(5432);
