@@ -52,7 +52,7 @@ db.query.summary             = "SELECT orders"
 db.query.text                = "select * from \"orders\" where \"status\" = ?"
 db.collection.name           = "orders"
 db.query.fingerprint         = "select * from \"orders\" where \"status\" = ?"
-db.query.hash                = "3f2a9c8b1d4e5f6a"
+db.query.hash                = "f767ea0d3ce5a1ab"
 kysely.query.tables           = ["orders"]
 kysely.query.parameter_count = 1
 db.response.returned_rows    = 12
@@ -69,6 +69,8 @@ There is no dedicated NestJS module. Wire `observeDialect` into your existing da
 import { Pool } from 'pg';
 import { Kysely, PostgresDialect } from 'kysely';
 import { observeDialect } from 'kysely-opentelemetry';
+// `Database` is your Kysely schema interface (the same one from Quick Start above).
+import type { Database } from './types';
 
 export const KYSELY = Symbol('KYSELY');
 
@@ -142,7 +144,7 @@ Runs last, on whatever text `queryText` would otherwise emit (`sanitized` or `pa
 | `db.system.name` | always | Auto-detected from the dialect adapter class (`postgresql`, `mysql`, `sqlite`, `microsoft.sql_server`, or `other_sql`), or the `dbSystem` override. |
 | `db.operation.name` | always | Derived from the AST node kind (`SELECT`, `INSERT`, `UPDATE`, `DELETE`, `CREATE TABLE`, …) or the first keyword of raw SQL. |
 | `db.query.summary` | `summary: true` (default) | `"{OPERATION} {tables…}"`, e.g. `SELECT orders`; also the span name; ≤255 chars. |
-| `db.query.text` | `queryText !== 'off'` and no sanitization error | Sanitized or parameterized SQL text, ≤`maxQueryTextLength` chars. |
+| `db.query.text` | `queryText !== 'off'` (in `'sanitized'` mode, also requires no sanitization error) | Sanitized or parameterized SQL text, ≤`maxQueryTextLength` chars. In `'parameterized'` mode it is the raw compiled SQL and is emitted regardless of any sanitization error. |
 | `db.collection.name` | `tables: true` (default) and a primary table was found | The first (primary) table. |
 | `db.query.fingerprint` | `fingerprint: true` (default) and no sanitization error | Placeholder-normalized, literal-scrubbed SQL shape; stable grouping key across parameter values; ≤`maxQueryTextLength` chars. |
 | `db.query.hash` | `hash: true` (default) | `sha256(fingerprint)`, first 16 hex chars — a compact grouping key for dashboards/alerts. |
