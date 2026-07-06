@@ -69,7 +69,7 @@ export class ObservedConnection implements DatabaseConnection {
       const result = await context.with(spanContext, () =>
         this.inner.executeQuery<R>(compiledQuery, options),
       );
-      this.finishSuccess(span, ctx, startTime);
+      this.finishSuccess(ctx, startTime);
       setResultAttributes(span, result);
       return result;
     } catch (error) {
@@ -100,8 +100,12 @@ export class ObservedConnection implements DatabaseConnection {
       ended = true;
       try {
         if (error === undefined) {
-          span.setAttribute(ATTR_RETURNED_ROWS, rowCount);
-          this.finishSuccess(span, ctx, startTime);
+          try {
+            span.setAttribute(ATTR_RETURNED_ROWS, rowCount);
+          } catch (e) {
+            warnOnce(e);
+          }
+          this.finishSuccess(ctx, startTime);
         } else {
           this.finishFailure(span, ctx, startTime, error);
         }
@@ -162,7 +166,7 @@ export class ObservedConnection implements DatabaseConnection {
     }
   }
 
-  private finishSuccess(span: Span, ctx: QueryContext, startTime: number): void {
+  private finishSuccess(ctx: QueryContext, startTime: number): void {
     try {
       if (this.deps.histogram) {
         recordDuration(this.deps.histogram, ctx, this.deps.dbSystem, performance.now() - startTime);
