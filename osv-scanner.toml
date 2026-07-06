@@ -1,0 +1,8 @@
+# Ignore dev-dependency vulnerabilities: this library ships zero runtime
+# dependencies. `@opentelemetry/api` and `kysely` are peerDependencies,
+# resolved in the consumer's own tree, and everything else lives under
+# devDependencies, affecting only the local build/test workflow — never the
+# published package or its consumers.
+[[PackageOverrides]]
+group = "dev"
+ignore = true

@@ -107,7 +107,9 @@ describe('ObservedDriver transaction spans', () => {
     const connection = await driver.acquireConnection();
     await driver.beginTransaction(connection, {});
     await driver.commitTransaction(connection);
-    expect(otel.spanExporter.getFinishedSpans().find((s) => s.name === 'TRANSACTION')).toBeUndefined();
+    expect(
+      otel.spanExporter.getFinishedSpans().find((s) => s.name === 'TRANSACTION'),
+    ).toBeUndefined();
   });
 
   it('queries outside a transaction have no TRANSACTION parent', async () => {
@@ -138,7 +140,11 @@ describe('ObservedDriver transaction spans', () => {
   });
 
   it('stamps connection-level attributes on transaction spans', async () => {
-    const { driver } = makeDriver({ namespace: 'shop', serverAddress: 'db.internal', serverPort: 5432 });
+    const { driver } = makeDriver({
+      namespace: 'shop',
+      serverAddress: 'db.internal',
+      serverPort: 5432,
+    });
     const connection = await driver.acquireConnection();
     await driver.beginTransaction(connection, {});
     await driver.commitTransaction(connection);

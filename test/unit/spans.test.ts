@@ -42,7 +42,10 @@ describe('recordError', () => {
     const type = recordError(span, err, normalizeOptions());
     expect(type).toBe('Error');
     expect(span.setAttribute).toHaveBeenCalledWith('error.type', 'Error');
-    expect(span.setStatus).toHaveBeenCalledWith({ code: SpanStatusCode.ERROR, message: 'bad query' });
+    expect(span.setStatus).toHaveBeenCalledWith({
+      code: SpanStatusCode.ERROR,
+      message: 'bad query',
+    });
     expect(span.recordException).toHaveBeenCalledWith(err);
   });
 

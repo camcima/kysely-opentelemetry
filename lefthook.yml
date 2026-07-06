@@ -1,0 +1,18 @@
+pre-commit:
+  parallel: true
+  jobs:
+    - name: format
+      glob: '*.{ts,js,json,md,yml,yaml}'
+      run: pnpm exec prettier --check {staged_files}
+    - name: lint
+      glob: '*.ts'
+      run: pnpm exec eslint {staged_files}
+    - name: secrets
+      # gitleaks is optional; skip gracefully when it isn't installed, but let
+      # it fail the commit when it IS installed and finds a staged secret.
+      run: if command -v gitleaks >/dev/null 2>&1; then gitleaks protect --staged --redact --no-banner; else echo "gitleaks not installed; skipping secret scan"; fi
+
+commit-msg:
+  jobs:
+    - name: commitlint
+      run: pnpm exec commitlint --edit {1}

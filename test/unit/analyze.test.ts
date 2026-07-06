@@ -68,7 +68,9 @@ describe('createAnalyzer', () => {
 
   it('truncates fingerprint and text to maxQueryTextLength', () => {
     const analyzeShort = createAnalyzer(normalizeOptions({ maxQueryTextLength: 10 }));
-    const ctx = analyzeShort(compile((db) => db.selectFrom('a_rather_long_table_name').selectAll()));
+    const ctx = analyzeShort(
+      compile((db) => db.selectFrom('a_rather_long_table_name').selectAll()),
+    );
     expect(ctx.fingerprint.length).toBeLessThanOrEqual(10);
     expect((ctx.text ?? '').length).toBeLessThanOrEqual(10);
   });

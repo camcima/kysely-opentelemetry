@@ -1,10 +1,4 @@
-import {
-  MssqlAdapter,
-  MysqlAdapter,
-  PostgresAdapter,
-  SqliteAdapter,
-  type Dialect,
-} from 'kysely';
+import { MssqlAdapter, MysqlAdapter, PostgresAdapter, SqliteAdapter, type Dialect } from 'kysely';
 import { describe, expect, it } from 'vitest';
 import { detectDbSystem } from '../../src/otel/system.js';
 

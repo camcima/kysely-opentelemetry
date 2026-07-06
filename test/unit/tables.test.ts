@@ -70,7 +70,9 @@ describe('extractTablesFromRawSql', () => {
     expect(extractTablesFromRawSql('INSERT INTO shipping_details VALUES (1)').tables).toEqual([
       'shipping_details',
     ]);
-    expect(extractTablesFromRawSql('UPDATE public.users SET a = 1').tables).toEqual(['public.users']);
+    expect(extractTablesFromRawSql('UPDATE public.users SET a = 1').tables).toEqual([
+      'public.users',
+    ]);
   });
 
   it('returns empty for unparsable SQL', () => {

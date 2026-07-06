@@ -34,7 +34,11 @@ function makeDb(script?: (cq: CompiledQuery) => { rows: any[] }, options = {}) {
 describe('observeDialect end-to-end', () => {
   it('emits a span for a query executed through Kysely', async () => {
     const { db } = makeDb(() => ({ rows: [{ id: 1, secret: 'hunter2' }] }));
-    await db.selectFrom('orders').selectAll().where('customer_email', '=', 'bob@example.com').execute();
+    await db
+      .selectFrom('orders')
+      .selectAll()
+      .where('customer_email', '=', 'bob@example.com')
+      .execute();
 
     const spans = otel.spanExporter.getFinishedSpans();
     expect(spans).toHaveLength(1);
@@ -103,7 +107,9 @@ describe('observeDialect end-to-end', () => {
   it('dbSystem option overrides auto-detection', async () => {
     const { db } = makeDb(undefined, { dbSystem: 'cockroachdb' });
     await db.selectFrom('orders').selectAll().execute();
-    expect(otel.spanExporter.getFinishedSpans()[0]!.attributes['db.system.name']).toBe('cockroachdb');
+    expect(otel.spanExporter.getFinishedSpans()[0]!.attributes['db.system.name']).toBe(
+      'cockroachdb',
+    );
   });
 
   it('query errors propagate unchanged to the caller', async () => {
@@ -122,9 +128,13 @@ describe('observeDialect end-to-end', () => {
 
   it('ObservedDialect is directly constructible with public options', async () => {
     const { dialect } = createFakeDialect();
-    const db = new Kysely<any>({ dialect: new ObservedDialect(dialect, { dbSystem: 'cockroachdb' }) });
+    const db = new Kysely<any>({
+      dialect: new ObservedDialect(dialect, { dbSystem: 'cockroachdb' }),
+    });
     await db.selectFrom('orders').selectAll().execute();
-    expect(otel.spanExporter.getFinishedSpans()[0]!.attributes['db.system.name']).toBe('cockroachdb');
+    expect(otel.spanExporter.getFinishedSpans()[0]!.attributes['db.system.name']).toBe(
+      'cockroachdb',
+    );
   });
 
   it('routes spans and metrics through injected providers instead of the globals', async () => {
@@ -135,7 +145,10 @@ describe('observeDialect end-to-end', () => {
     const metricExporter = new InMemoryMetricExporter(AggregationTemporality.CUMULATIVE);
     const meterProvider = new MeterProvider({
       readers: [
-        new PeriodicExportingMetricReader({ exporter: metricExporter, exportIntervalMillis: 3_600_000 }),
+        new PeriodicExportingMetricReader({
+          exporter: metricExporter,
+          exportIntervalMillis: 3_600_000,
+        }),
       ],
     });
 

@@ -60,12 +60,17 @@ describe('sqlite end-to-end', () => {
 
   it('traces a failed query with error status and rethrows', async () => {
     await expect(db.selectFrom('missing_table').selectAll().execute()).rejects.toThrow();
-    const span = otel.spanExporter.getFinishedSpans().find((s) => s.name === 'SELECT missing_table')!;
+    const span = otel.spanExporter
+      .getFinishedSpans()
+      .find((s) => s.name === 'SELECT missing_table')!;
     expect(span.status.code).toBe(2); // SpanStatusCode.ERROR
   });
 
   it('traces streamed queries', async () => {
-    await db.insertInto('orders').values([{ id: 3 }, { id: 4 }]).execute();
+    await db
+      .insertInto('orders')
+      .values([{ id: 3 }, { id: 4 }])
+      .execute();
     otel.spanExporter.reset();
     const rows: unknown[] = [];
     for await (const row of db.selectFrom('orders').selectAll().stream()) {

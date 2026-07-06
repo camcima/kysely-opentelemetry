@@ -130,11 +130,7 @@ export class ObservedDriver implements Driver {
     }
   }
 
-  private endTransactionSpan(
-    wrapper: ObservedConnection,
-    outcome: string,
-    error?: unknown,
-  ): void {
+  private endTransactionSpan(wrapper: ObservedConnection, outcome: string, error?: unknown): void {
     const span = wrapper.transactionSpan;
     wrapper.transactionSpan = undefined;
     wrapper.transactionContext = undefined;

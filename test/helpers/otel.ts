@@ -22,7 +22,10 @@ export function setupOtel() {
   const metricExporter = new InMemoryMetricExporter(AggregationTemporality.CUMULATIVE);
   const meterProvider = new MeterProvider({
     readers: [
-      new PeriodicExportingMetricReader({ exporter: metricExporter, exportIntervalMillis: 3_600_000 }),
+      new PeriodicExportingMetricReader({
+        exporter: metricExporter,
+        exportIntervalMillis: 3_600_000,
+      }),
     ],
   });
   metrics.setGlobalMeterProvider(meterProvider);

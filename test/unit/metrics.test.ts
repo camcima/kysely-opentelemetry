@@ -10,9 +10,17 @@ function fakeHistogram() {
 
 function ctx(overrides: Partial<QueryContext> = {}): QueryContext {
   return {
-    sql: 'select 1', parameters: [], operation: 'SELECT', tables: [], tablesTruncated: false,
-    summary: 'SELECT orders', fingerprint: 'select ?', hash: 'abc', isRaw: false,
-    sanitizationError: false, ...overrides,
+    sql: 'select 1',
+    parameters: [],
+    operation: 'SELECT',
+    tables: [],
+    tablesTruncated: false,
+    summary: 'SELECT orders',
+    fingerprint: 'select ?',
+    hash: 'abc',
+    isRaw: false,
+    sanitizationError: false,
+    ...overrides,
   } as QueryContext;
 }
 
@@ -50,7 +58,11 @@ describe('recordDuration', () => {
 
   it('emits connection-level attributes when configured', () => {
     const h = fakeHistogram();
-    const options = normalizeOptions({ namespace: 'shop', serverAddress: 'db.internal', serverPort: 5432 });
+    const options = normalizeOptions({
+      namespace: 'shop',
+      serverAddress: 'db.internal',
+      serverPort: 5432,
+    });
     recordDuration(h, ctx(), 'postgresql', options, 100);
     const [, attrs] = h.record.mock.calls[0];
     expect(attrs['db.namespace']).toBe('shop');
