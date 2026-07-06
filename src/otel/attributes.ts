@@ -8,8 +8,11 @@ export const ATTR_DB_OPERATION = 'db.operation.name';
 export const ATTR_DB_QUERY_SUMMARY = 'db.query.summary';
 export const ATTR_DB_QUERY_TEXT = 'db.query.text';
 export const ATTR_DB_COLLECTION = 'db.collection.name';
+export const ATTR_DB_NAMESPACE = 'db.namespace';
 export const ATTR_RETURNED_ROWS = 'db.response.returned_rows';
 export const ATTR_ERROR_TYPE = 'error.type';
+export const ATTR_SERVER_ADDRESS = 'server.address';
+export const ATTR_SERVER_PORT = 'server.port';
 // Custom attributes
 export const ATTR_DB_QUERY_FINGERPRINT = 'db.query.fingerprint';
 export const ATTR_DB_QUERY_HASH = 'db.query.hash';
@@ -32,6 +35,9 @@ export function buildQueryAttributes(
     [ATTR_DB_OPERATION]: ctx.operation,
     [ATTR_PARAMETER_COUNT]: ctx.parameters.length,
   };
+  if (options.namespace !== undefined) attrs[ATTR_DB_NAMESPACE] = options.namespace;
+  if (options.serverAddress !== undefined) attrs[ATTR_SERVER_ADDRESS] = options.serverAddress;
+  if (options.serverPort !== undefined) attrs[ATTR_SERVER_PORT] = options.serverPort;
   if (options.summary) attrs[ATTR_DB_QUERY_SUMMARY] = ctx.summary;
   if (ctx.text !== undefined) attrs[ATTR_DB_QUERY_TEXT] = ctx.text;
   if (options.tables && ctx.primaryTable !== undefined) attrs[ATTR_DB_COLLECTION] = ctx.primaryTable;

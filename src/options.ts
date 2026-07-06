@@ -6,6 +6,12 @@ export interface KyselyOtelOptions {
   enabled?: boolean;
   /** Override db.system.name auto-detection (e.g. 'postgresql'). */
   dbSystem?: string;
+  /** Emitted as db.namespace on spans and metrics (e.g. the database name). Not auto-detectable from a dialect. */
+  namespace?: string;
+  /** Emitted as server.address on spans and metrics (e.g. the DB host). */
+  serverAddress?: string;
+  /** Emitted as server.port on spans and metrics. */
+  serverPort?: number;
   /** db.query.text emission. Default 'sanitized'. */
   queryText?: 'off' | 'sanitized' | 'parameterized';
   /** Max chars for db.query.text and db.query.fingerprint. Default 4096. */
@@ -29,6 +35,9 @@ export interface KyselyOtelOptions {
 export interface NormalizedOptions {
   readonly enabled: boolean;
   readonly dbSystem?: string;
+  readonly namespace?: string;
+  readonly serverAddress?: string;
+  readonly serverPort?: number;
   readonly queryText: 'off' | 'sanitized' | 'parameterized';
   readonly maxQueryTextLength: number;
   readonly fingerprint: boolean;
@@ -46,6 +55,9 @@ export function normalizeOptions(options: KyselyOtelOptions = {}): NormalizedOpt
   return {
     enabled: options.enabled ?? true,
     ...(options.dbSystem !== undefined && { dbSystem: options.dbSystem }),
+    ...(options.namespace !== undefined && { namespace: options.namespace }),
+    ...(options.serverAddress !== undefined && { serverAddress: options.serverAddress }),
+    ...(options.serverPort !== undefined && { serverPort: options.serverPort }),
     queryText: options.queryText ?? 'sanitized',
     maxQueryTextLength: options.maxQueryTextLength ?? 4096,
     fingerprint: options.fingerprint ?? true,

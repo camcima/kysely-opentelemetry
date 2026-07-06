@@ -47,4 +47,14 @@ describe('recordDuration', () => {
     expect(attrs).not.toHaveProperty('db.query.summary');
     expect(attrs['db.operation.name']).toBe('SELECT'); // rest of the attrs intact
   });
+
+  it('emits connection-level attributes when configured', () => {
+    const h = fakeHistogram();
+    const options = normalizeOptions({ namespace: 'shop', serverAddress: 'db.internal', serverPort: 5432 });
+    recordDuration(h, ctx(), 'postgresql', options, 100);
+    const [, attrs] = h.record.mock.calls[0];
+    expect(attrs['db.namespace']).toBe('shop');
+    expect(attrs['server.address']).toBe('db.internal');
+    expect(attrs['server.port']).toBe(5432);
+  });
 });

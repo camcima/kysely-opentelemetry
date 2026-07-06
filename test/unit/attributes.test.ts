@@ -54,4 +54,16 @@ describe('buildQueryAttributes', () => {
     });
     expect(throwing.attrs['db.operation.name']).toBe('SELECT'); // still built
   });
+
+  it('emits connection-level attributes when configured, omits them by default', () => {
+    const configured = attrsFor({ namespace: 'shop', serverAddress: 'db.internal', serverPort: 5432 });
+    expect(configured.attrs['db.namespace']).toBe('shop');
+    expect(configured.attrs['server.address']).toBe('db.internal');
+    expect(configured.attrs['server.port']).toBe(5432);
+
+    const defaults = attrsFor();
+    expect(defaults.attrs).not.toHaveProperty('db.namespace');
+    expect(defaults.attrs).not.toHaveProperty('server.address');
+    expect(defaults.attrs).not.toHaveProperty('server.port');
+  });
 });

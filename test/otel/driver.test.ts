@@ -136,6 +136,17 @@ describe('ObservedDriver transaction spans', () => {
     const userSpan = spans.find((s) => s.name === 'user-step')!;
     expect(querySpan.parentSpanContext?.spanId).toBe(userSpan.spanContext().spanId);
   });
+
+  it('stamps connection-level attributes on transaction spans', async () => {
+    const { driver } = makeDriver({ namespace: 'shop', serverAddress: 'db.internal', serverPort: 5432 });
+    const connection = await driver.acquireConnection();
+    await driver.beginTransaction(connection, {});
+    await driver.commitTransaction(connection);
+    const txSpan = otel.spanExporter.getFinishedSpans().find((s) => s.name === 'TRANSACTION')!;
+    expect(txSpan.attributes['db.namespace']).toBe('shop');
+    expect(txSpan.attributes['server.address']).toBe('db.internal');
+    expect(txSpan.attributes['server.port']).toBe(5432);
+  });
 });
 
 describe('ObservedDriver stream span backstop', () => {

@@ -19,6 +19,9 @@ describe('normalizeOptions', () => {
     expect(opts.dbSystem).toBeUndefined();
     expect(opts.attributes).toBeUndefined();
     expect(opts.redact).toBeUndefined();
+    expect(opts.namespace).toBeUndefined();
+    expect(opts.serverAddress).toBeUndefined();
+    expect(opts.serverPort).toBeUndefined();
   });
 
   it('honors overrides', () => {

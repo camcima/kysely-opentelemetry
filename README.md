@@ -97,6 +97,9 @@ All options are optional; every default is production-safe as shipped.
 |---|---|---|---|
 | `enabled` | `boolean` | `true` | Kill switch. When `false`, `observeDialect` returns the wrapped dialect completely untouched — zero overhead, zero spans. |
 | `dbSystem` | `string` | auto-detected | Override the auto-detected `db.system.name` (e.g. for a community dialect that isn't recognized). |
+| `namespace` | `string` | — | Emitted as `db.namespace` on all spans and the duration metric (typically the database name). Cannot be auto-detected from a dialect. |
+| `serverAddress` | `string` | — | Emitted as `server.address` on all spans and the duration metric. |
+| `serverPort` | `number` | — | Emitted as `server.port` on all spans and the duration metric. |
 | `queryText` | `'off' \| 'sanitized' \| 'parameterized'` | `'sanitized'` | Controls `db.query.text`. `'sanitized'` emits the scrubbed fingerprint; `'parameterized'` emits the compiled SQL as-is (already placeholder-parameterized by Kysely for builder queries); `'off'` omits `db.query.text` entirely. |
 | `maxQueryTextLength` | `number` | `4096` | Max characters for `db.query.text` and `db.query.fingerprint`. |
 | `fingerprint` | `boolean` | `true` | Emit `db.query.fingerprint`. |
@@ -142,6 +145,8 @@ Runs last, on whatever text `queryText` would otherwise emit (`sanitized` or `pa
 | Attribute | Emitted when | Notes |
 |---|---|---|
 | `db.system.name` | always | Auto-detected from the dialect adapter class (`postgresql`, `mysql`, `sqlite`, `microsoft.sql_server`, or `other_sql`), or the `dbSystem` override. |
+| `db.namespace` | `namespace` option set | The configured database name. |
+| `server.address` / `server.port` | `serverAddress` / `serverPort` option set | The configured DB host/port. |
 | `db.operation.name` | always | Derived from the AST node kind (`SELECT`, `INSERT`, `UPDATE`, `DELETE`, `CREATE TABLE`, …) or the first keyword of raw SQL. |
 | `db.query.summary` | `summary: true` (default) | `"{OPERATION} {tables…}"`, e.g. `SELECT orders`; also the span name; ≤255 chars. |
 | `db.query.text` | `queryText !== 'off'` (in `'sanitized'` mode, also requires no sanitization error) | Sanitized or parameterized SQL text, ≤`maxQueryTextLength` chars. In `'parameterized'` mode it is the raw compiled SQL and is emitted regardless of any sanitization error. |
@@ -158,11 +163,11 @@ Runs last, on whatever text `queryText` would otherwise emit (`sanitized` or `pa
 | `error.type` | on failure | The DB driver's error `code` when exposed (e.g. Postgres `23505`), else the error's constructor name, else `_OTHER`. |
 | `kysely.stream.outcome` | on a stream span force-closed at connection release | `released_unfinished` — set only when a manually-driven stream iterator is abandoned and its span is force-closed as the connection returns to the pool; absent on streams that complete, error, or `break` normally. |
 
-Transaction spans (`transactions: true`, default) are named `TRANSACTION`, kind `CLIENT`, and carry `db.system.name` plus `kysely.transaction.outcome` (`committed` | `rolled_back` | `begin_failed` | `commit_failed` | `rollback_failed` | `released_unfinished`). Query spans issued inside `db.transaction()` are children of the transaction span — unless you open your own span inside the transaction callback, in which case queries nest under *your* span instead. (The two hierarchies cannot be combined: the driver cannot inject the `TRANSACTION` span into your ambient context, so when you create spans of your own, your hierarchy wins and the `TRANSACTION` span remains a sibling that still carries the outcome attribute.)
+Transaction spans (`transactions: true`, default) are named `TRANSACTION`, kind `CLIENT`, and carry `db.system.name`, `db.namespace` / `server.address` / `server.port` (when configured), plus `kysely.transaction.outcome` (`committed` | `rolled_back` | `begin_failed` | `commit_failed` | `rollback_failed` | `released_unfinished`). Query spans issued inside `db.transaction()` are children of the transaction span — unless you open your own span inside the transaction callback, in which case queries nest under *your* span instead. (The two hierarchies cannot be combined: the driver cannot inject the `TRANSACTION` span into your ambient context, so when you create spans of your own, your hierarchy wins and the `TRANSACTION` span remains a sibling that still carries the outcome attribute.)
 
 ### Metric
 
-`db.client.operation.duration` — a `Histogram` (unit: seconds, semconv bucket boundaries `[0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5, 10]`), recorded for **every** query regardless of trace sampling, so aggregates stay accurate even when only a fraction of traces are kept. Attributes are deliberately low-cardinality: `db.system.name`, `db.operation.name`, `db.query.summary` (when `summary: true`, default), `db.collection.name` (when known), and `error.type` (on failure).
+`db.client.operation.duration` — a `Histogram` (unit: seconds, semconv bucket boundaries `[0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5, 10]`), recorded for **every** query regardless of trace sampling, so aggregates stay accurate even when only a fraction of traces are kept. Attributes are deliberately low-cardinality: `db.system.name`, `db.operation.name`, `db.query.summary` (when `summary: true`, default), `db.collection.name` (when known), `db.namespace` / `server.address` / `server.port` (when configured), and `error.type` (on failure).
 
 ## TraceQL cookbook
 

@@ -1,7 +1,13 @@
-import { context, SpanKind, trace } from '@opentelemetry/api';
+import { context, SpanKind, trace, type Attributes } from '@opentelemetry/api';
 import type { DatabaseConnection, Driver, TransactionSettings } from 'kysely';
 import { ObservedConnection, type ObservedConnectionDeps } from './observed-connection.js';
-import { ATTR_DB_SYSTEM, ATTR_TRANSACTION_OUTCOME } from './otel/attributes.js';
+import {
+  ATTR_DB_NAMESPACE,
+  ATTR_DB_SYSTEM,
+  ATTR_SERVER_ADDRESS,
+  ATTR_SERVER_PORT,
+  ATTR_TRANSACTION_OUTCOME,
+} from './otel/attributes.js';
 import { recordError, warnLimited } from './otel/spans.js';
 
 export class ObservedDriver implements Driver {
@@ -102,9 +108,14 @@ export class ObservedDriver implements Driver {
   private startTransactionSpan(wrapper: ObservedConnection): void {
     try {
       const parent = context.active();
+      const attributes: Attributes = { [ATTR_DB_SYSTEM]: this.deps.dbSystem };
+      const { namespace, serverAddress, serverPort } = this.deps.options;
+      if (namespace !== undefined) attributes[ATTR_DB_NAMESPACE] = namespace;
+      if (serverAddress !== undefined) attributes[ATTR_SERVER_ADDRESS] = serverAddress;
+      if (serverPort !== undefined) attributes[ATTR_SERVER_PORT] = serverPort;
       const span = this.deps.tracer.startSpan(
         'TRANSACTION',
-        { kind: SpanKind.CLIENT, attributes: { [ATTR_DB_SYSTEM]: this.deps.dbSystem } },
+        { kind: SpanKind.CLIENT, attributes },
         parent,
       );
       wrapper.transactionSpan = span;
