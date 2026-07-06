@@ -15,6 +15,13 @@
 // input char matches exactly one alternation branch — an ambiguous branch
 // (where a lone backslash could match both \\. and the catch-all) causes
 // catastrophic backtracking (ReDoS) on unterminated quotes.
+//
+// The mirror-image caveat: \' is treated as an escaped quote (MySQL
+// semantics), but in Postgres's default standard_conforming_strings mode a
+// backslash is a literal character, so a raw-SQL literal ending in a
+// backslash ('C:\') makes the scrubber over-consume into the next literal
+// and corrupt that query's fingerprint. Builder queries are unaffected
+// (values are always bind parameters). Pinned in fingerprint.test.ts.
 const DOLLAR_QUOTED = /\$([A-Za-z_][A-Za-z0-9_]*)?\$[\s\S]*?\$\1\$/g;
 const SINGLE_QUOTED = /'(?:[^'\\]|\\.|'')*'/g;
 const UUID = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi;

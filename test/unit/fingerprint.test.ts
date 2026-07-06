@@ -71,3 +71,14 @@ describe('fingerprintSql', () => {
     expect(typeof result).toBe('string');
   });
 });
+
+describe('known limitation: Postgres standard_conforming_strings', () => {
+  it('a literal backslash before a closing quote over-consumes into the next literal', () => {
+    // In Postgres (standard_conforming_strings = on) 'C:\' is a complete
+    // string, but the scrubber applies MySQL escape semantics, so it consumes
+    // through the next quote and swallows the SQL between the two literals.
+    // Pinned so any future regex change surfaces here deliberately.
+    const result = fingerprintSql("SELECT * FROM t WHERE path = 'C:\\' AND name = 'x'");
+    expect(result).toBe("SELECT * FROM t WHERE path = ?x'");
+  });
+});
