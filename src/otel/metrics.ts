@@ -1,5 +1,6 @@
 import { metrics, ValueType, type Attributes, type Histogram } from '@opentelemetry/api';
 import type { QueryContext } from '../analysis/analyze.js';
+import type { NormalizedOptions } from '../options.js';
 import { VERSION } from '../version.js';
 import {
   ATTR_DB_COLLECTION,
@@ -28,14 +29,15 @@ export function recordDuration(
   histogram: Histogram,
   ctx: QueryContext,
   dbSystem: string,
+  options: NormalizedOptions,
   durationMs: number,
   errType?: string,
 ): void {
   const attrs: Attributes = {
     [ATTR_DB_SYSTEM]: dbSystem,
     [ATTR_DB_OPERATION]: ctx.operation,
-    [ATTR_DB_QUERY_SUMMARY]: ctx.summary,
   };
+  if (options.summary) attrs[ATTR_DB_QUERY_SUMMARY] = ctx.summary;
   if (ctx.primaryTable !== undefined) attrs[ATTR_DB_COLLECTION] = ctx.primaryTable;
   if (errType !== undefined) attrs[ATTR_ERROR_TYPE] = errType;
   histogram.record(durationMs / 1000, attrs);

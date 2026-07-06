@@ -100,7 +100,7 @@ All options are optional; every default is production-safe as shipped.
 | `queryText` | `'off' \| 'sanitized' \| 'parameterized'` | `'sanitized'` | Controls `db.query.text`. `'sanitized'` emits the scrubbed fingerprint; `'parameterized'` emits the compiled SQL as-is (already placeholder-parameterized by Kysely for builder queries); `'off'` omits `db.query.text` entirely. |
 | `maxQueryTextLength` | `number` | `4096` | Max characters for `db.query.text` and `db.query.fingerprint`. |
 | `fingerprint` | `boolean` | `true` | Emit `db.query.fingerprint`. |
-| `summary` | `boolean` | `true` | Emit `db.query.summary` (also used as the span name regardless of this flag). |
+| `summary` | `boolean` | `true` | Emit `db.query.summary` on spans **and** on the duration metric. The span *name* still uses the summary regardless (spans need a name); set this to `false` to keep the summary out of metric/attribute cardinality. |
 | `tables` | `boolean` | `true` | Emit `db.collection.name` and `kysely.query.tables`. |
 | `hash` | `boolean` | `true` | Emit `db.query.hash`. |
 | `metrics` | `boolean` | `true` | Emit the `db.client.operation.duration` histogram. |
@@ -162,7 +162,7 @@ Transaction spans (`transactions: true`, default) are named `TRANSACTION`, kind 
 
 ### Metric
 
-`db.client.operation.duration` — a `Histogram` (unit: seconds, semconv bucket boundaries `[0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5, 10]`), recorded for **every** query regardless of trace sampling, so aggregates stay accurate even when only a fraction of traces are kept. Attributes are deliberately low-cardinality: `db.system.name`, `db.operation.name`, `db.query.summary`, `db.collection.name` (when known), and `error.type` (on failure).
+`db.client.operation.duration` — a `Histogram` (unit: seconds, semconv bucket boundaries `[0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5, 10]`), recorded for **every** query regardless of trace sampling, so aggregates stay accurate even when only a fraction of traces are kept. Attributes are deliberately low-cardinality: `db.system.name`, `db.operation.name`, `db.query.summary` (when `summary: true`, default), `db.collection.name` (when known), and `error.type` (on failure).
 
 ## TraceQL cookbook
 

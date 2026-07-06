@@ -189,7 +189,13 @@ export class ObservedConnection implements DatabaseConnection {
   private finishSuccess(ctx: QueryContext, startTime: number): void {
     try {
       if (this.deps.histogram) {
-        recordDuration(this.deps.histogram, ctx, this.deps.dbSystem, performance.now() - startTime);
+        recordDuration(
+          this.deps.histogram,
+          ctx,
+          this.deps.dbSystem,
+          this.deps.options,
+          performance.now() - startTime,
+        );
       }
     } catch (error) {
       warnLimited('failed to record duration metric', error);
@@ -204,6 +210,7 @@ export class ObservedConnection implements DatabaseConnection {
           this.deps.histogram,
           ctx,
           this.deps.dbSystem,
+          this.deps.options,
           performance.now() - startTime,
           errType,
         );
