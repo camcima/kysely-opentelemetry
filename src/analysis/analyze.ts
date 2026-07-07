@@ -33,6 +33,22 @@ const CACHE_SIZE = 10_000;
  *  real memory sink, and re-analysis cost is proportional to the string. */
 const MAX_CACHED_SQL_LENGTH = 32_768;
 
+/** Hard memory ceiling for the cache, independent of entry count. The count
+ *  limit alone permits ~400MB worst case (10k entries near the per-entry cap);
+ *  this bounds it honestly. Typical workloads stay well under it and are
+ *  governed by CACHE_SIZE. */
+const CACHE_MAX_BYTES = 16 * 1024 * 1024;
+
+/** Approximate retained bytes for a cache entry. JS strings are UTF-16, so
+ *  ~2 bytes per code unit; exact accounting is unnecessary for a memory bound. */
+function analysisBytes(key: string, a: QueryAnalysis): number {
+  let units =
+    key.length + a.operation.length + a.summary.length + a.fingerprint.length + a.hash.length;
+  if (a.text !== undefined) units += a.text.length;
+  for (const table of a.tables) units += table.length;
+  return units * 2;
+}
+
 /**
  * Builds an Analyzer that caches the sql-derived parts of a QueryContext
  * (everything except per-call parameters) in a bounded LRU keyed by the
@@ -41,7 +57,10 @@ const MAX_CACHED_SQL_LENGTH = 32_768;
  * MAX_CACHED_SQL_LENGTH is analyzed but not cached, to bound memory.
  */
 export function createAnalyzer(options: NormalizedOptions): Analyzer {
-  const cache = new LruCache<string, QueryAnalysis>(CACHE_SIZE);
+  const cache = new LruCache<string, QueryAnalysis>(CACHE_SIZE, {
+    maxBytes: CACHE_MAX_BYTES,
+    sizeOf: analysisBytes,
+  });
   return (compiledQuery) => {
     // Key on kind + sql: a raw query and a builder query can compile to the
     // identical SQL string yet analyze differently (isRaw, table extraction).

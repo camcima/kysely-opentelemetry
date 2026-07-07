@@ -1,6 +1,13 @@
 import type { Attributes, MeterProvider, TracerProvider } from '@opentelemetry/api';
 import type { QueryContext } from './analysis/analyze.js';
 
+export interface MetricsOptions {
+  /** Emit the db.client.operation.duration histogram. Default true. */
+  operationDuration?: boolean;
+  /** Emit the db.client.connection.wait_time histogram. Default true. */
+  connectionWaitTime?: boolean;
+}
+
 export interface KyselyOtelOptions {
   /** Kill switch. When false, observeDialect returns the dialect untouched. Default true. */
   enabled?: boolean;
@@ -12,6 +19,11 @@ export interface KyselyOtelOptions {
   serverAddress?: string;
   /** Emitted as server.port on spans and metrics. */
   serverPort?: number;
+  /** db.client.connection.pool.name on the wait_time metric. Default: derived
+   *  as serverAddress[:serverPort][/namespace], falling back to the db system
+   *  name. Set this when several pools share one endpoint (e.g. read-write vs
+   *  read-only) so their series stay separable. */
+  poolName?: string;
   /** db.query.text emission. Default 'sanitized'. */
   queryText?: 'off' | 'sanitized' | 'parameterized';
   /** Max chars for db.query.text and db.query.fingerprint. Default 4096. */
@@ -20,8 +32,10 @@ export interface KyselyOtelOptions {
   summary?: boolean;
   tables?: boolean;
   hash?: boolean;
-  /** Emit the db.client.operation.duration histogram. Default true. */
-  metrics?: boolean;
+  /** Metric emission: `true`/`false` gates all histograms together, or pass
+   *  an object to gate db.client.operation.duration and
+   *  db.client.connection.wait_time independently. Default true (all). */
+  metrics?: boolean | MetricsOptions;
   /** Emit TRANSACTION spans. Default true. */
   transactions?: boolean;
   /** span.recordException on query failure. Default true. */
@@ -45,13 +59,14 @@ export interface NormalizedOptions {
   readonly namespace?: string;
   readonly serverAddress?: string;
   readonly serverPort?: number;
+  readonly poolName?: string;
   readonly queryText: 'off' | 'sanitized' | 'parameterized';
   readonly maxQueryTextLength: number;
   readonly fingerprint: boolean;
   readonly summary: boolean;
   readonly tables: boolean;
   readonly hash: boolean;
-  readonly metrics: boolean;
+  readonly metrics: Readonly<Required<MetricsOptions>>;
   readonly transactions: boolean;
   readonly recordExceptions: boolean;
   readonly shouldObserve?: (ctx: QueryContext) => boolean;
@@ -68,13 +83,14 @@ export function normalizeOptions(options: KyselyOtelOptions = {}): NormalizedOpt
     ...(options.namespace !== undefined && { namespace: options.namespace }),
     ...(options.serverAddress !== undefined && { serverAddress: options.serverAddress }),
     ...(options.serverPort !== undefined && { serverPort: options.serverPort }),
+    ...(options.poolName !== undefined && { poolName: options.poolName }),
     queryText: options.queryText ?? 'sanitized',
     maxQueryTextLength: options.maxQueryTextLength ?? 4096,
     fingerprint: options.fingerprint ?? true,
     summary: options.summary ?? true,
     tables: options.tables ?? true,
     hash: options.hash ?? true,
-    metrics: options.metrics ?? true,
+    metrics: normalizeMetrics(options.metrics ?? true),
     transactions: options.transactions ?? true,
     recordExceptions: options.recordExceptions ?? true,
     ...(options.shouldObserve !== undefined && { shouldObserve: options.shouldObserve }),
@@ -82,5 +98,15 @@ export function normalizeOptions(options: KyselyOtelOptions = {}): NormalizedOpt
     ...(options.redact !== undefined && { redact: options.redact }),
     ...(options.tracerProvider !== undefined && { tracerProvider: options.tracerProvider }),
     ...(options.meterProvider !== undefined && { meterProvider: options.meterProvider }),
+  };
+}
+
+function normalizeMetrics(metrics: boolean | MetricsOptions): Readonly<Required<MetricsOptions>> {
+  if (typeof metrics === 'boolean') {
+    return { operationDuration: metrics, connectionWaitTime: metrics };
+  }
+  return {
+    operationDuration: metrics.operationDuration ?? true,
+    connectionWaitTime: metrics.connectionWaitTime ?? true,
   };
 }

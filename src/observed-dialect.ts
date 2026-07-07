@@ -11,7 +11,11 @@ import { createAnalyzer } from './analysis/analyze.js';
 import { ObservedDriver } from './observed-driver.js';
 import type { ObservedConnectionDeps } from './observed-connection.js';
 import { normalizeOptions, type KyselyOtelOptions, type NormalizedOptions } from './options.js';
-import { createDurationHistogram } from './otel/metrics.js';
+import {
+  createDurationHistogram,
+  createWaitTimeHistogram,
+  resolveWaitTimeAttributes,
+} from './otel/metrics.js';
 import { detectDbSystem } from './otel/system.js';
 import { VERSION } from './version.js';
 
@@ -36,14 +40,20 @@ export class ObservedDialect implements Dialect {
   createDriver(): Driver {
     const tracerProvider = this.options.tracerProvider ?? trace;
     const meterProvider = this.options.meterProvider ?? metrics;
+    const meter = meterProvider.getMeter('kysely-opentelemetry', VERSION);
+    const dbSystem = this.options.dbSystem ?? detectDbSystem(this.inner);
     const deps: ObservedConnectionDeps = {
       options: this.options,
       analyze: createAnalyzer(this.options),
       tracer: tracerProvider.getTracer('kysely-opentelemetry', VERSION),
-      ...(this.options.metrics && {
-        histogram: createDurationHistogram(meterProvider.getMeter('kysely-opentelemetry', VERSION)),
+      ...(this.options.metrics.operationDuration && {
+        histogram: createDurationHistogram(meter),
       }),
-      dbSystem: this.options.dbSystem ?? detectDbSystem(this.inner),
+      ...(this.options.metrics.connectionWaitTime && {
+        waitTimeHistogram: createWaitTimeHistogram(meter),
+        waitTimeAttributes: resolveWaitTimeAttributes(this.options, dbSystem),
+      }),
+      dbSystem,
     };
     return new ObservedDriver(this.inner.createDriver(), deps);
   }

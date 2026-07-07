@@ -39,7 +39,7 @@ src/
     tables.ts              OperationNode walk → table names (+ primary table)
     summary.ts             operation + tables → "SELECT orders customers"
     fingerprint.ts         placeholder normalization + literal sanitizer + IN-collapse
-    hash.ts                sha256(fingerprint) 16-hex-char prefix (node:crypto)
+    hash.ts                FNV-1a 64-bit hash of fingerprint, 16 hex chars (runtime-agnostic)
     lru.ts                 small internal LRU (no dependency)
   otel/
     system.ts              dialect adapter class → db.system.name auto-detection
@@ -64,7 +64,7 @@ Each module has one purpose and a narrow interface; `analysis/` is pure (no OTel
 - **One wrapper per inner connection**, cached in a `WeakMap<DatabaseConnection, ObservedConnection>`, so driver identity checks hold across acquire/release cycles.
 - **Always unwrap** before delegating to the inner driver — `beginTransaction`, `commitTransaction`, `rollbackTransaction`, and `releaseConnection` all receive the wrapper from Kysely and must pass the inner connection down (inner drivers cast to their own connection class).
 - **Transactions**: `beginTransaction` starts a `TRANSACTION` span (kind CLIENT, `db.system.name`, per-connection state). Query spans on that connection parent to it via its stored context. `commit`/`rollback` end it with `kysely.transaction.outcome = committed | rolled_back`. Sound because Kysely pins a transaction to one connection.
-- **Pool acquire timing**: `acquireConnection` is timed; duration is emitted as `kysely.pool.acquire_duration_ms` on the first query span executed after that acquisition only (one acquisition serves many queries).
+- **Pool acquire timing**: `acquireConnection` is timed; the duration is recorded on the `db.client.connection.wait_time` histogram (semconv; gated by `metrics.connectionWaitTime`) and emitted as `kysely.pool.acquire_duration_ms` on the first query span executed after that acquisition only (one acquisition serves many queries; the value is consumed by the first query even when that query is unobserved, so it can never leak onto a later span).
 
 ### 3.4 Safety invariant
 
@@ -92,7 +92,8 @@ interface KyselyOtelOptions {
   summary?: boolean;                    // default true
   tables?: boolean;                     // default true
   hash?: boolean;                       // default true
-  metrics?: boolean;                    // default true
+  metrics?: boolean | { operationDuration?: boolean; connectionWaitTime?: boolean }; // default true (all)
+  poolName?: string;                    // db.client.connection.pool.name override
   transactions?: boolean;               // default true
   recordExceptions?: boolean;           // default true
   attributes?: (ctx: QueryContext) => Attributes;  // custom-attribute escape hatch
@@ -121,26 +122,28 @@ interface KyselyOtelOptions {
 | `kysely.query.parameter_count` | always emitted (number, zero risk) |
 | `kysely.query.raw` | `true` when root node is `RawNode` (analysis best-effort) |
 | `kysely.query.sanitization_error` | `true` when sanitizer failed (then `db.query.text` omitted) |
-| `kysely.pool.acquire_duration_ms` | first query span after acquisition only |
+| `kysely.pool.acquire_duration_ms` | first query span after acquisition only (trace-side twin of the wait_time metric) |
 | `db.response.returned_rows` | on completion: `result.rows.length` |
 | `kysely.query.affected_rows` | on completion, mutations only: `Number(result.numAffectedRows)` when defined |
 | `error.type` | on failure: error constructor name, or DB error `code` when exposed |
 
 Transaction span: name `TRANSACTION`, kind CLIENT, `db.system.name`, `kysely.transaction.outcome`.
 
-### 5.2 Metric
+### 5.2 Metrics
 
 `db.client.operation.duration` — histogram, unit seconds, semconv bucket boundaries. Attributes (low-cardinality only): `db.system.name`, `db.operation.name`, `db.query.summary`, `db.collection.name`, `error.type`. Recorded for every query even when the span is unsampled — aggregates stay accurate under trace sampling.
+
+`db.client.connection.wait_time` — histogram, unit seconds, one record per pool acquisition. Attributes: `db.system.name` and `db.client.connection.pool.name` (the `poolName` option, else derived `serverAddress[:serverPort][/namespace]`, else the db system name; resolved once at `createDriver` into a frozen attributes object).
 
 ## 6. Query analysis
 
 Pure pipeline in `analysis/`, LRU-cached (10,000 entries) by `compiledQuery.sql`:
 
-- **Operation**: `query.kind` → `SELECT`/`INSERT`/`UPDATE`/`DELETE`/`MERGE`; DDL nodes map to their verb (`CREATE TABLE`, `ALTER TABLE`, …); `RawNode` → first SQL keyword.
-- **Tables**: recursive `OperationNode` walk over `from`/`into`/`joins`/`using`/`with` collecting `TableNode` identifiers; cap 20, dedupe, first-seen order; first = primary. `RawNode` root: best-effort regex on `FROM`/`JOIN`/`INTO`/`UPDATE` targets + `kysely.query.raw = true`.
+- **Operation**: `query.kind` → `SELECT`/`INSERT`/`UPDATE`/`DELETE`/`MERGE`; DDL nodes map to their verb (`CREATE TABLE`, `ALTER TABLE`, …); `RawNode` → first SQL keyword of the comment/string-masked text; a raw `WITH …` resolves to the first top-level DML verb after the CTE list (paren-depth scan on masked SQL), falling back to `WITH`.
+- **Tables**: recursive `OperationNode` walk over `from`/`into`/`joins`/`using`/`with` collecting `TableNode` identifiers; cap 20, dedupe, first-seen order; first = primary. `RawNode` root: best-effort regex on `FROM`/`JOIN`/`INTO`/`UPDATE` targets over comment/string-masked SQL, excluding CTE alias names, with main-statement (paren-depth-0) tables ordered before CTE-body tables + `kysely.query.raw = true`.
 - **Summary**: `"{OPERATION} {tables…}"` (e.g. `SELECT orders customers`); no tables → `{OPERATION} unknown`; truncate 255.
 - **Fingerprint** (from `compiledQuery.sql`): normalize placeholders (`$1`, `?`, `@p1` → `?`); sanitize literals — dollar-quoted strings, single-quoted strings, UUIDs, hex, numerics (defense-in-depth for raw fragments); collapse `IN (?, ?, …)` → `IN (?)`; normalize whitespace; truncate 4096.
-- **Hash**: `sha256(fingerprint)`, first 16 hex chars.
+- **Hash**: FNV-1a 64-bit of the fingerprint, 16 hex chars (grouping key, not a security primitive; runtime-agnostic — no `node:crypto`).
 
 ## 7. Error handling
 

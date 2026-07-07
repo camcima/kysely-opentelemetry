@@ -41,6 +41,15 @@ export function setupOtel() {
       await meterProvider.forceFlush();
       return metricExporter.getMetrics();
     },
+    /** Flushes and returns the named metric, or undefined if never recorded. */
+    async findMetric(name: string) {
+      await meterProvider.forceFlush();
+      return metricExporter
+        .getMetrics()
+        .flatMap((rm) => rm.scopeMetrics)
+        .flatMap((sm) => sm.metrics)
+        .find((m) => m.descriptor.name === name);
+    },
     async teardown() {
       await tracerProvider.shutdown();
       await meterProvider.shutdown();

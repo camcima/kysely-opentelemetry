@@ -11,6 +11,6 @@
   },
   "hooks": {
     "before:init": ["pnpm run lint", "pnpm test"],
-    "after:bump": "pnpm run build"
+    "after:bump": ["pnpm run sync-version", "pnpm run build"]
   }
 }

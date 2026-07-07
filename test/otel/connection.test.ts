@@ -38,7 +38,12 @@ const SELECT = compile((db) => db.selectFrom('orders').selectAll().where('id', '
 describe('ObservedConnection.executeQuery', () => {
   it('creates a CLIENT span named from the summary with full attributes', async () => {
     const { connection } = makeConnection();
-    const result = await connection.executeQuery(SELECT);
+    // A non-hex sentinel value so the no-leak check below can't collide with
+    // the hex query hash (which legitimately contains any hex digit).
+    const query = compile((db) =>
+      db.selectFrom('orders').selectAll().where('status', '=', 'zzPARAMzz'),
+    );
+    const result = await connection.executeQuery(query);
     expect(result.rows).toEqual([{ id: 1 }]);
 
     const spans = otel.spanExporter.getFinishedSpans();
@@ -51,17 +56,13 @@ describe('ObservedConnection.executeQuery', () => {
     expect(span.attributes['db.query.hash']).toMatch(/^[0-9a-f]{16}$/);
     expect(span.attributes['db.response.returned_rows']).toBe(1);
     expect(span.attributes['kysely.query.parameter_count']).toBe(1);
-    expect(JSON.stringify(span.attributes)).not.toContain('7'); // no parameter values
+    expect(JSON.stringify(span.attributes)).not.toContain('zzPARAMzz'); // no parameter values
   });
 
   it('records the duration histogram', async () => {
     const { connection } = makeConnection();
     await connection.executeQuery(SELECT);
-    const metricData = await otel.collectMetrics();
-    const metric = metricData
-      .flatMap((rm) => rm.scopeMetrics)
-      .flatMap((sm) => sm.metrics)
-      .find((m) => m.descriptor.name === 'db.client.operation.duration');
+    const metric = await otel.findMetric('db.client.operation.duration');
     expect(metric).toBeDefined();
     const point = (metric!.dataPoints[0] ?? {}) as any;
     expect(point.attributes['db.query.summary']).toBe('SELECT orders');
@@ -79,16 +80,6 @@ describe('ObservedConnection.executeQuery', () => {
     expect(spans).toHaveLength(1);
     expect(spans[0]!.status.code).toBe(SpanStatusCode.ERROR);
     expect(spans[0]!.attributes['error.type']).toBe('23505');
-  });
-
-  it('emits acquire duration on the first query only', async () => {
-    const { connection } = makeConnection();
-    connection.acquireDurationMs = 12.5;
-    await connection.executeQuery(SELECT);
-    await connection.executeQuery(SELECT);
-    const spans = otel.spanExporter.getFinishedSpans();
-    expect(spans[0]!.attributes['kysely.pool.acquire_duration_ms']).toBe(12.5);
-    expect(spans[1]!.attributes['kysely.pool.acquire_duration_ms']).toBeUndefined();
   });
 
   it('executes un-instrumented when analysis fails (safety invariant)', async () => {
@@ -164,11 +155,7 @@ describe('ObservedConnection.streamQuery', () => {
     connection.endOpenStreamSpans();
     const span = otel.spanExporter.getFinishedSpans()[0]!;
     expect(span.attributes['kysely.stream.outcome']).toBe('released_unfinished');
-    const metricData = await otel.collectMetrics();
-    const metric = metricData
-      .flatMap((rm) => rm.scopeMetrics)
-      .flatMap((sm) => sm.metrics)
-      .find((m) => m.descriptor.name === 'db.client.operation.duration');
+    const metric = await otel.findMetric('db.client.operation.duration');
     expect(metric?.dataPoints ?? []).toHaveLength(0);
   });
 });
@@ -191,11 +178,7 @@ describe('shouldObserve filter', () => {
     const result = await connection.executeQuery(SELECT);
     expect(result.rows).toEqual([]); // query still executes
     expect(otel.spanExporter.getFinishedSpans()).toHaveLength(0);
-    const metricData = await otel.collectMetrics();
-    const metric = metricData
-      .flatMap((rm) => rm.scopeMetrics)
-      .flatMap((sm) => sm.metrics)
-      .find((m) => m.descriptor.name === 'db.client.operation.duration');
+    const metric = await otel.findMetric('db.client.operation.duration');
     expect(metric?.dataPoints ?? []).toHaveLength(0);
   });
 
@@ -209,5 +192,36 @@ describe('shouldObserve filter', () => {
     });
     await throwing.executeQuery(SELECT);
     expect(otel.spanExporter.getFinishedSpans()).toHaveLength(2); // still observed
+  });
+});
+
+describe('acquire-duration span attribute', () => {
+  it('emits acquire duration on the first query span only', async () => {
+    const { connection } = makeConnection();
+    connection.acquireDurationMs = 12.5;
+    await connection.executeQuery(SELECT);
+    await connection.executeQuery(SELECT);
+    const spans = otel.spanExporter.getFinishedSpans();
+    expect(spans[0]!.attributes['kysely.pool.acquire_duration_ms']).toBe(12.5);
+    expect(spans[1]!.attributes['kysely.pool.acquire_duration_ms']).toBeUndefined();
+  });
+
+  it('does not leak the acquire duration onto a later query when the first is filtered', async () => {
+    const options = normalizeOptions({ shouldObserve: (ctx) => ctx.operation !== 'SELECT' });
+    const inner = new FakeConnection((() => ({ rows: [] })) as any);
+    const connection = new ObservedConnection(inner, {
+      options,
+      analyze: createAnalyzer(options),
+      tracer: trace.getTracer('test'),
+      dbSystem: 'postgresql',
+    });
+    connection.acquireDurationMs = 42;
+    await connection.executeQuery(SELECT); // filtered: unobserved, consumes the duration
+    const INSERT = compile((db) => db.insertInto('orders').values({ id: 1 }));
+    await connection.executeQuery(INSERT); // observed, must NOT inherit 42
+    const spans = otel.spanExporter.getFinishedSpans();
+    expect(spans).toHaveLength(1);
+    expect(spans[0]!.name).toBe('INSERT orders');
+    expect(spans[0]!.attributes['kysely.pool.acquire_duration_ms']).toBeUndefined();
   });
 });

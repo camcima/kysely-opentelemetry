@@ -45,6 +45,13 @@ export class ObservedDriver implements Driver {
     const start = performance.now();
     const connection = await this.inner.acquireConnection(options);
     const duration = performance.now() - start;
+    if (this.deps.waitTimeHistogram) {
+      try {
+        this.deps.waitTimeHistogram.record(duration / 1000, this.deps.waitTimeAttributes);
+      } catch (error) {
+        warnLimited('failed to record connection wait_time metric', error);
+      }
+    }
     let wrapper = this.#wrappers.get(connection);
     if (!wrapper) {
       wrapper = new ObservedConnection(connection, this.deps);

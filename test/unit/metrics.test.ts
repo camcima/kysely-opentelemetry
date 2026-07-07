@@ -1,6 +1,6 @@
 import type { Histogram } from '@opentelemetry/api';
 import { describe, expect, it, vi } from 'vitest';
-import { recordDuration } from '../../src/otel/metrics.js';
+import { recordDuration, resolveWaitTimeAttributes } from '../../src/otel/metrics.js';
 import type { QueryContext } from '../../src/analysis/analyze.js';
 import { normalizeOptions } from '../../src/options.js';
 
@@ -68,5 +68,47 @@ describe('recordDuration', () => {
     expect(attrs['db.namespace']).toBe('shop');
     expect(attrs['server.address']).toBe('db.internal');
     expect(attrs['server.port']).toBe(5432);
+  });
+});
+
+describe('resolveWaitTimeAttributes', () => {
+  it('tags db.system.name and derives the pool name from address, port, and namespace', () => {
+    const attrs = resolveWaitTimeAttributes(
+      normalizeOptions({ serverAddress: 'db.internal', serverPort: 5432, namespace: 'shop' }),
+      'postgresql',
+    );
+    expect(attrs['db.system.name']).toBe('postgresql');
+    expect(attrs['db.client.connection.pool.name']).toBe('db.internal:5432/shop');
+  });
+
+  it('uses the address alone when port and namespace are absent', () => {
+    const attrs = resolveWaitTimeAttributes(
+      normalizeOptions({ serverAddress: 'db.internal' }),
+      'postgresql',
+    );
+    expect(attrs['db.client.connection.pool.name']).toBe('db.internal');
+  });
+
+  it('uses the namespace when there is no server address', () => {
+    const attrs = resolveWaitTimeAttributes(normalizeOptions({ namespace: 'shop' }), 'postgresql');
+    expect(attrs['db.client.connection.pool.name']).toBe('shop');
+  });
+
+  it('falls back to the db system name when no connection info is configured', () => {
+    const attrs = resolveWaitTimeAttributes(normalizeOptions(), 'postgresql');
+    expect(attrs['db.client.connection.pool.name']).toBe('postgresql');
+  });
+
+  it('honors an explicit poolName option over any derivation', () => {
+    const attrs = resolveWaitTimeAttributes(
+      normalizeOptions({ poolName: 'read-replica', serverAddress: 'db.internal' }),
+      'postgresql',
+    );
+    expect(attrs['db.client.connection.pool.name']).toBe('read-replica');
+  });
+
+  it('returns a frozen object safe to share across recordings', () => {
+    const attrs = resolveWaitTimeAttributes(normalizeOptions(), 'postgresql');
+    expect(Object.isFrozen(attrs)).toBe(true);
   });
 });

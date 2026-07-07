@@ -43,8 +43,11 @@ describe('postgres end-to-end', () => {
     expect(select.attributes['db.query.fingerprint']).toContain('= ?');
     expect(JSON.stringify(select.attributes)).not.toContain('paid');
 
-    const first = spans[0]!;
-    expect(first.attributes['kysely.pool.acquire_duration_ms']).toBeTypeOf('number');
+    const waitTime = await otel.findMetric('db.client.connection.wait_time');
+    expect(waitTime).toBeDefined();
+    expect((waitTime!.dataPoints[0] as any).attributes['db.client.connection.pool.name']).toBe(
+      'postgresql',
+    );
   });
 
   it('traces rolled-back transactions', async () => {

@@ -3,6 +3,15 @@
   "version": "0.1.0",
   "description": "OpenTelemetry instrumentation for Kysely: semconv-compliant spans and metrics with stable query grouping keys",
   "license": "MIT",
+  "author": "Carlos Cima",
+  "homepage": "https://github.com/camcima/kysely-opentelemetry#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/camcima/kysely-opentelemetry.git"
+  },
+  "bugs": {
+    "url": "https://github.com/camcima/kysely-opentelemetry/issues"
+  },
   "type": "module",
   "packageManager": "pnpm@10.17.0",
   "main": "./dist/index.cjs",
@@ -46,6 +55,7 @@
     "lint": "eslint src test",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "sync-version": "node scripts/sync-version.mjs",
     "release": "release-it",
     "prepublishOnly": "pnpm run build",
     "prepare": "lefthook install",
