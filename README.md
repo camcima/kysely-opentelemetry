@@ -76,6 +76,8 @@ db.response.returned_rows    = 12
 
 Notice there is no `'paid'` anywhere — the parameter value never reaches the span. `db.query.text` and `db.query.fingerprint` show the sanitized, placeholder-normalized SQL (identical here because the default `queryText: 'sanitized'` mode reuses the fingerprint).
 
+Want a runnable end-to-end setup instead of a snippet? [`kysely-opentelemetry-examples`](https://github.com/camcima/kysely-opentelemetry-examples) wires this library into an Express + Kysely + Postgres app with a Docker Compose stack (OTel Collector, Tempo, Prometheus, Grafana), a pre-provisioned dashboard built on the grouping keys, and an in-process smoke test that asserts the full telemetry contract — including that no bind-parameter value ever reaches a span.
+
 ## NestJS usage
 
 There is no dedicated NestJS module. Wire `observeDialect` into your existing database provider with `useFactory`:
@@ -112,7 +114,7 @@ All options are optional; every default is production-safe as shipped.
 | Option               | Type                                      | Default         | Description                                                                                                                                                                                                                                                                                                                 |
 | -------------------- | ----------------------------------------- | --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `enabled`            | `boolean`                                 | `true`          | Kill switch. When `false`, `observeDialect` returns the wrapped dialect completely untouched — zero overhead, zero spans.                                                                                                                                                                                                   |
-| `dbSystem`           | `string`                                  | auto-detected   | Override the auto-detected `db.system.name` (e.g. for a community dialect that isn't recognized).                                                                                                                                                                                                                           |
+| `dbSystem`           | `string`                                  | auto-detected   | Override the auto-detected `db.system.name` (e.g. for a community dialect that isn't recognized, or when detection falls back to `other_sql` — see [If `db.system.name` shows `other_sql`](#if-dbsystemname-shows-other_sql)).                                                                                              |
 | `namespace`          | `string`                                  | —               | Emitted as `db.namespace` on all spans and the duration metric (typically the database name). Cannot be auto-detected from a dialect.                                                                                                                                                                                       |
 | `serverAddress`      | `string`                                  | —               | Emitted as `server.address` on all spans and the duration metric.                                                                                                                                                                                                                                                           |
 | `serverPort`         | `number`                                  | —               | Emitted as `server.port` on all spans and the duration metric.                                                                                                                                                                                                                                                              |
@@ -163,11 +165,20 @@ Runs last, on whatever text `queryText` would otherwise emit (`sanitized` or `pa
 ```ts
 observeDialect(dialect, {
   // Skip health checks and other noise — no span, no metric.
-  shouldObserve: (ctx) => ctx.sql !== 'select 1',
+  shouldObserve: (ctx) => !/^\s*select\s+1\b/i.test(ctx.sql),
 });
 ```
 
-The filter runs on the hot path before span creation; keep it cheap. It receives the same `QueryContext` as the `attributes` hook.
+Prefer an anchored, case-insensitive match over strict equality (`ctx.sql !== 'select 1'`): real health-check probes vary in casing and shape (`SELECT 1`, `select 1;`, `SELECT 1 AS ok`), and an exact comparison silently stops matching the moment the probe changes. The filter runs on the hot path before span creation; keep it cheap — a small anchored regex like the one above is fine, an unbounded backtracking regex is not. It receives the same `QueryContext` as the `attributes` hook.
+
+### If `db.system.name` shows `other_sql`
+
+`db.system.name` is auto-detected from the dialect's adapter: first by `instanceof` against Kysely's built-in adapter classes (survives minification, covers community dialects that extend them), then — when every `instanceof` misses — by matching adapter class names up the prototype chain. When both fail, the value falls back to `other_sql` and a rate-limited `diag.warn` reports it.
+
+If you use PostgreSQL/MySQL/MSSQL/SQLite and still see `other_sql`, the usual cause is **duplicated `kysely` module instances**: your app's `kysely` and the copy this library resolves are different module instances, so `instanceof` always fails, and a minified bundle also defeats the class-name fallback. This happens with `npm link`/`file:` installs during local development, pnpm workspaces with version skew, or monorepos pinning two `kysely` versions. Two fixes:
+
+- **Dedupe `kysely`** so only one copy resolves (e.g. `npm dedupe`, pnpm overrides, or aligning versions across the workspace) — this fixes the root cause.
+- **Set the `dbSystem` option** (e.g. `dbSystem: 'postgresql'`) to bypass detection entirely — always safe, and the right call for community dialects that don't extend a built-in adapter.
 
 ## Emitted telemetry reference
 
@@ -175,7 +186,7 @@ The filter runs on the hot path before span creation; keep it cheap. It receives
 
 | Attribute                         | Emitted when                                                                       | Notes                                                                                                                                                                                                                                                                                                                                     |
 | --------------------------------- | ---------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `db.system.name`                  | always                                                                             | Auto-detected from the dialect adapter class (`postgresql`, `mysql`, `sqlite`, `microsoft.sql_server`, or `other_sql`), or the `dbSystem` override.                                                                                                                                                                                       |
+| `db.system.name`                  | always                                                                             | Auto-detected from the dialect adapter class (`postgresql`, `mysql`, `sqlite`, `microsoft.sql_server`, or `other_sql`), or the `dbSystem` override. Seeing `other_sql` unexpectedly? See [If `db.system.name` shows `other_sql`](#if-dbsystemname-shows-other_sql).                                                                       |
 | `db.namespace`                    | `namespace` option set                                                             | The configured database name.                                                                                                                                                                                                                                                                                                             |
 | `server.address` / `server.port`  | `serverAddress` / `serverPort` option set                                          | The configured DB host/port.                                                                                                                                                                                                                                                                                                              |
 | `db.operation.name`               | always                                                                             | Derived from the AST node kind (`SELECT`, `INSERT`, `UPDATE`, `DELETE`, `CREATE TABLE`, …) or the first keyword of raw SQL. For a raw `WITH …` query it resolves to the statement's main verb, not `WITH` (comments, string literals, and quoted identifiers are masked before scanning; the scanner falls back to `WITH` when in doubt). |
@@ -251,6 +262,8 @@ HTTP request span (e.g. express/fastify/nestjs instrumentation)
 ```
 
 Each layer instruments a different boundary — this library instruments Kysely's `DatabaseConnection`, the driver instrumentation instruments the underlying client library — so both spans are legitimate and additive in the trace view.
+
+**ESM apps:** this library works in ESM without any special setup (it wraps the dialect directly; nothing is monkey-patched). But the _driver- and HTTP-level_ instrumentations shown above (`@opentelemetry/instrumentation-http`, `-express`, `-pg`, …) patch modules at load time, and in an ESM app they silently fail to patch unless Node is started with the OpenTelemetry ESM loader hook — e.g. `node --import ./register-otel.mjs app.mjs` where the register file calls `module.register('@opentelemetry/instrumentation/hook.mjs', ...)`, or the equivalent `--experimental-loader` flag for older Node versions (see the [OTel JS ESM support doc](https://github.com/open-telemetry/opentelemetry-js/blob/main/doc/esm-support.md)). The symptom is exactly the trace tree above minus the HTTP and `pg.query` spans: your Kysely spans appear, but parentless and with no driver child.
 
 **Double-counting warning:** if you build dashboards or alerts on _duration_ or _count_, decide which layer is your source of truth and use only that layer's spans/metrics for aggregation. Summing `db.client.operation.duration` from this library **and** an equivalent driver-level metric for the same logical query will double-count DB time. This library's grouping keys (`db.query.summary`, `db.query.fingerprint`, `db.query.hash`) are generally more useful for aggregation than driver-level spans, since driver instrumentation typically only has the final parameterized SQL string to group by (higher cardinality, no stable hash).
 
