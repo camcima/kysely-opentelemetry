@@ -42,12 +42,14 @@ jobs:
         uses: codecov/codecov-action@v7
         with:
           use_oidc: true
+          flags: unit
       - name: Upload test results to Codecov
         if: ${{ !cancelled() }}
         uses: codecov/codecov-action@v7
         with:
           use_oidc: true
           report_type: test_results
+          flags: unit
 
   quality:
     runs-on: ubuntu-latest
@@ -66,6 +68,9 @@ jobs:
 
   integration:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -74,7 +79,19 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm test:integration
+      - run: pnpm test:integration:coverage
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v7
+        with:
+          use_oidc: true
+          flags: integration
+      - name: Upload test results to Codecov
+        if: ${{ !cancelled() }}
+        uses: codecov/codecov-action@v7
+        with:
+          use_oidc: true
+          report_type: test_results
+          flags: integration
 
   osv-scanner:
     runs-on: ubuntu-latest

@@ -7,3 +7,15 @@ coverage:
     patch:
       default:
         target: 80%
+
+# Coverage is uploaded from two independent CI jobs and merged by Codecov:
+#   - unit:        vitest over test/unit + test/otel (no external deps)
+#   - integration: vitest over test/integration (real Postgres/MySQL/SQLite/MSSQL)
+# carryforward keeps a flag's last-known coverage when its job doesn't upload on
+# a given commit, so the combined project total never drops just because one
+# job was skipped.
+flags:
+  unit:
+    carryforward: true
+  integration:
+    carryforward: true
