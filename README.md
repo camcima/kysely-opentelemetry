@@ -1,4 +1,19 @@
-# kysely-opentelemetry
+<div align="center">
+
+<picture>
+  <img alt="kysely-opentelemetry" src="assets/logo.svg" width="640">
+</picture>
+
+<br>
+
+[![CI](https://github.com/camcima/kysely-opentelemetry/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/camcima/kysely-opentelemetry/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/camcima/kysely-opentelemetry/actions/workflows/codeql.yml/badge.svg?branch=main)](https://github.com/camcima/kysely-opentelemetry/actions/workflows/codeql.yml)
+[![npm version](https://img.shields.io/npm/v/kysely-opentelemetry)](https://www.npmjs.com/package/kysely-opentelemetry)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.9-blue.svg)](https://www.typescriptlang.org/)
+[![Node.js](https://img.shields.io/badge/Node.js-18%20%7C%2020%20%7C%2022-green.svg)](https://nodejs.org/)
+
+</div>
 
 OpenTelemetry instrumentation for [Kysely](https://kysely.dev). Wraps any Kysely `Dialect` and emits semantic-convention-compliant `CLIENT` spans plus a `db.client.operation.duration` histogram, tagged with stable, low-cardinality grouping keys — `db.query.summary`, `db.query.fingerprint`, `db.query.hash` — so you can answer "which queries are slowest?", "which consume the most DB time?", and "which query patterns fail?" in Grafana Tempo, Jaeger, Honeycomb, Datadog, or any OTel backend. Production-safe by default: no parameter values are ever captured, and query text is sanitized before it leaves the process.
 
