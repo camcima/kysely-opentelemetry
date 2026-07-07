@@ -1,4 +1,5 @@
 import { metrics, SpanKind, SpanStatusCode, trace } from '@opentelemetry/api';
+import type { DatabaseConnection } from 'kysely';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createAnalyzer } from '../../src/analysis/analyze.js';
 import { ObservedConnection } from '../../src/observed-connection.js';
@@ -10,7 +11,7 @@ import {
   resolveWaitTimeAttributes,
 } from '../../src/otel/metrics.js';
 import { compile } from '../helpers/compile.js';
-import { createFakeDialect } from '../helpers/fake-dialect.js';
+import { createFakeDialect, FakeDriver } from '../helpers/fake-dialect.js';
 import { setupOtel } from '../helpers/otel.js';
 
 let otel: ReturnType<typeof setupOtel>;
@@ -129,7 +130,7 @@ describe('ObservedDriver transaction spans', () => {
     expect(txSpan.attributes['kysely.transaction.outcome']).toBe('rolled_back');
   });
 
-  it('ends the span with error status when begin fails', async () => {
+  it('ends the span with begin_failed outcome and error status when begin fails', async () => {
     const { driver, fakeDriver } = makeDriver();
     const connection = await driver.acquireConnection();
     fakeDriver.beginTransaction = async () => {
@@ -137,6 +138,35 @@ describe('ObservedDriver transaction spans', () => {
     };
     await expect(driver.beginTransaction(connection, {})).rejects.toThrow('begin failed');
     const txSpan = otel.spanExporter.getFinishedSpans().find((s) => s.name === 'TRANSACTION')!;
+    expect(txSpan.attributes['kysely.transaction.outcome']).toBe('begin_failed');
+    expect(txSpan.status.code).toBe(SpanStatusCode.ERROR);
+    expect((connection as ObservedConnection).transactionSpan).toBeUndefined();
+  });
+
+  it('marks commit_failed outcome and records the error, rethrowing, when commit throws', async () => {
+    const { driver, fakeDriver } = makeDriver();
+    const connection = await driver.acquireConnection();
+    await driver.beginTransaction(connection, {});
+    fakeDriver.commitTransaction = async () => {
+      throw new Error('commit boom');
+    };
+    await expect(driver.commitTransaction(connection)).rejects.toThrow('commit boom');
+    const txSpan = otel.spanExporter.getFinishedSpans().find((s) => s.name === 'TRANSACTION')!;
+    expect(txSpan.attributes['kysely.transaction.outcome']).toBe('commit_failed');
+    expect(txSpan.status.code).toBe(SpanStatusCode.ERROR);
+    expect((connection as ObservedConnection).transactionSpan).toBeUndefined();
+  });
+
+  it('marks rollback_failed outcome and records the error, rethrowing, when rollback throws', async () => {
+    const { driver, fakeDriver } = makeDriver();
+    const connection = await driver.acquireConnection();
+    await driver.beginTransaction(connection, {});
+    fakeDriver.rollbackTransaction = async () => {
+      throw new Error('rollback boom');
+    };
+    await expect(driver.rollbackTransaction(connection)).rejects.toThrow('rollback boom');
+    const txSpan = otel.spanExporter.getFinishedSpans().find((s) => s.name === 'TRANSACTION')!;
+    expect(txSpan.attributes['kysely.transaction.outcome']).toBe('rollback_failed');
     expect(txSpan.status.code).toBe(SpanStatusCode.ERROR);
     expect((connection as ObservedConnection).transactionSpan).toBeUndefined();
   });
@@ -191,6 +221,60 @@ describe('ObservedDriver transaction spans', () => {
     expect(txSpan.attributes['db.namespace']).toBe('shop');
     expect(txSpan.attributes['server.address']).toBe('db.internal');
     expect(txSpan.attributes['server.port']).toBe(5432);
+  });
+});
+
+describe('ObservedDriver savepoint forwarding (Kysely 0.28+)', () => {
+  type SavepointFn = (c: DatabaseConnection, name: string, compile: unknown) => Promise<void>;
+
+  function makeSavepointDriver() {
+    const calls: Array<{ method: string; unwrapped: boolean; name: string }> = [];
+    const inner = new FakeDriver(() => ({ rows: [] }));
+    const record =
+      (method: string): SavepointFn =>
+      async (c, name) => {
+        calls.push({ method, unwrapped: c === inner.connection, name });
+      };
+    // Present only on Kysely 0.28+ drivers; ObservedDriver reads them in its
+    // constructor and forwards to the inner driver with the connection unwrapped.
+    const withSavepoints = inner as FakeDriver & {
+      savepoint: SavepointFn;
+      rollbackToSavepoint: SavepointFn;
+      releaseSavepoint: SavepointFn;
+    };
+    withSavepoints.savepoint = record('savepoint');
+    withSavepoints.rollbackToSavepoint = record('rollbackToSavepoint');
+    withSavepoints.releaseSavepoint = record('releaseSavepoint');
+
+    const options = normalizeOptions({});
+    const driver = new ObservedDriver(withSavepoints, {
+      options,
+      analyze: createAnalyzer(options),
+      tracer: trace.getTracer('test'),
+      dbSystem: 'postgresql',
+    });
+    return { driver, calls };
+  }
+
+  it('forwards each savepoint call to the inner driver, unwrapping the connection', async () => {
+    const { driver, calls } = makeSavepointDriver();
+    const connection = await driver.acquireConnection(); // wrapped ObservedConnection
+    const compile = (() => {}) as unknown;
+    await driver.savepoint!(connection, 'sp1', compile as never);
+    await driver.rollbackToSavepoint!(connection, 'sp1', compile as never);
+    await driver.releaseSavepoint!(connection, 'sp1', compile as never);
+    expect(calls).toEqual([
+      { method: 'savepoint', unwrapped: true, name: 'sp1' },
+      { method: 'rollbackToSavepoint', unwrapped: true, name: 'sp1' },
+      { method: 'releaseSavepoint', unwrapped: true, name: 'sp1' },
+    ]);
+  });
+
+  it('leaves savepoint members undefined when the inner driver lacks them', () => {
+    const { driver } = makeDriver(); // FakeDriver defines no savepoint methods
+    expect(driver.savepoint).toBeUndefined();
+    expect(driver.rollbackToSavepoint).toBeUndefined();
+    expect(driver.releaseSavepoint).toBeUndefined();
   });
 });
 
