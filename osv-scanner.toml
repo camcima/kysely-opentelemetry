@@ -1,8 +1,15 @@
-# Ignore dev-dependency vulnerabilities: this library ships zero runtime
-# dependencies. `@opentelemetry/api` and `kysely` are peerDependencies,
-# resolved in the consumer's own tree, and everything else lives under
-# devDependencies, affecting only the local build/test workflow — never the
-# published package or its consumers.
+# This library ships zero runtime dependencies. `@opentelemetry/api` and
+# `kysely` are peerDependencies (resolved in the consumer's own tree), and
+# everything else lives under devDependencies — affecting only the local
+# build/test workflow, never the published package or its consumers.
+#
+# A `group = "dev"` override does not work here: with the pnpm lockfile
+# (lockfileVersion 9) osv-scanner cannot reliably classify transitive
+# dependencies as dev vs. prod, so dev-only advisories (e.g. esbuild pulled
+# in via tsup/vitest) are not suppressed by group and would fail CI on noise
+# that never reaches consumers. Since there are no runtime deps to protect,
+# ignore the npm ecosystem wholesale. Narrow this the moment a real runtime
+# dependency is added.
 [[PackageOverrides]]
-group = "dev"
+ecosystem = "npm"
 ignore = true
