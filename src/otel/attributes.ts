@@ -13,6 +13,7 @@ export const ATTR_RETURNED_ROWS = 'db.response.returned_rows';
 export const ATTR_ERROR_TYPE = 'error.type';
 export const ATTR_SERVER_ADDRESS = 'server.address';
 export const ATTR_SERVER_PORT = 'server.port';
+export const ATTR_POOL_NAME = 'db.client.connection.pool.name';
 // Custom attributes
 export const ATTR_DB_QUERY_FINGERPRINT = 'db.query.fingerprint';
 export const ATTR_DB_QUERY_HASH = 'db.query.hash';

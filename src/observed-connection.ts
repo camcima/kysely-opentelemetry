@@ -2,6 +2,7 @@ import {
   context,
   SpanKind,
   trace,
+  type Attributes,
   type Context,
   type Histogram,
   type Span,
@@ -25,6 +26,10 @@ export interface ObservedConnectionDeps {
   readonly analyze: Analyzer;
   readonly tracer: Tracer;
   readonly histogram?: Histogram;
+  /** Connection-pool wait_time histogram; recorded by ObservedDriver on
+   *  acquire against the pre-resolved, frozen waitTimeAttributes. */
+  readonly waitTimeHistogram?: Histogram;
+  readonly waitTimeAttributes?: Attributes;
   readonly dbSystem: string;
 }
 
@@ -44,7 +49,10 @@ export class ObservedConnection implements DatabaseConnection {
   /** Span active when the transaction began; when the active span at query
    *  time differs, the user opened their own span inside the callback. */
   transactionParentSpan: Span | undefined = undefined;
-  /** Set by ObservedDriver on acquire; consumed by the first query span. */
+  /** Set by ObservedDriver on acquire; consumed by the FIRST query on the
+   *  lease whether or not that query is observed — never carried over to a
+   *  later span (that would misattribute the wait). Trace-only signal; the
+   *  wait_time histogram is the metrics-side equivalent. */
   acquireDurationMs: number | undefined = undefined;
   /** endSpan closures of streams still open on this connection; drained by
    *  endOpenStreamSpans() when the lease ends (abandoned manual iterators). */
@@ -173,6 +181,10 @@ export class ObservedConnection implements DatabaseConnection {
   }
 
   private startQuery(compiledQuery: CompiledQuery): StartedQuery | undefined {
+    // Consumed before any filtering or analysis so an unobserved first query
+    // still spends the value: it must never leak onto a later query's span.
+    const acquireDurationMs = this.acquireDurationMs;
+    this.acquireDurationMs = undefined;
     try {
       const ctx = this.deps.analyze(compiledQuery);
       if (
@@ -183,10 +195,7 @@ export class ObservedConnection implements DatabaseConnection {
       }
       const parent = this.pickParent();
       const attributes = buildQueryAttributes(ctx, this.deps.dbSystem, this.deps.options);
-      if (this.acquireDurationMs !== undefined) {
-        attributes[ATTR_ACQUIRE_DURATION] = this.acquireDurationMs;
-        this.acquireDurationMs = undefined;
-      }
+      if (acquireDurationMs !== undefined) attributes[ATTR_ACQUIRE_DURATION] = acquireDurationMs;
       const span = this.deps.tracer.startSpan(
         ctx.summary,
         { kind: SpanKind.CLIENT, attributes },

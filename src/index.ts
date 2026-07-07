@@ -1,5 +1,5 @@
 export { observeDialect, ObservedDialect } from './observed-dialect.js';
-export type { KyselyOtelOptions } from './options.js';
+export type { KyselyOtelOptions, MetricsOptions } from './options.js';
 export type { QueryContext } from './analysis/analyze.js';
 export { VERSION } from './version.js';
 export {
@@ -15,6 +15,7 @@ export {
   ATTR_DB_SYSTEM,
   ATTR_ERROR_TYPE,
   ATTR_PARAMETER_COUNT,
+  ATTR_POOL_NAME,
   ATTR_RAW,
   ATTR_RETURNED_ROWS,
   ATTR_SANITIZATION_ERROR,

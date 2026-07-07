@@ -13,7 +13,7 @@ describe('normalizeOptions', () => {
       summary: true,
       tables: true,
       hash: true,
-      metrics: true,
+      metrics: { operationDuration: true, connectionWaitTime: true },
       transactions: true,
       recordExceptions: true,
     });
@@ -24,8 +24,28 @@ describe('normalizeOptions', () => {
     expect(opts.namespace).toBeUndefined();
     expect(opts.serverAddress).toBeUndefined();
     expect(opts.serverPort).toBeUndefined();
+    expect(opts.poolName).toBeUndefined();
     expect(opts.tracerProvider).toBeUndefined();
     expect(opts.meterProvider).toBeUndefined();
+  });
+
+  it('normalizes metrics booleans and per-metric objects', () => {
+    expect(normalizeOptions({ metrics: false }).metrics).toEqual({
+      operationDuration: false,
+      connectionWaitTime: false,
+    });
+    expect(normalizeOptions({ metrics: { connectionWaitTime: false } }).metrics).toEqual({
+      operationDuration: true,
+      connectionWaitTime: false,
+    });
+    expect(normalizeOptions({ metrics: { operationDuration: false } }).metrics).toEqual({
+      operationDuration: false,
+      connectionWaitTime: true,
+    });
+  });
+
+  it('passes through poolName', () => {
+    expect(normalizeOptions({ poolName: 'read-replica' }).poolName).toBe('read-replica');
   });
 
   it('honors overrides', () => {
@@ -40,7 +60,7 @@ describe('normalizeOptions', () => {
     });
     expect(opts.enabled).toBe(false);
     expect(opts.queryText).toBe('off');
-    expect(opts.metrics).toBe(false);
+    expect(opts.metrics).toEqual({ operationDuration: false, connectionWaitTime: false });
     expect(opts.redact).toBe(redact);
     expect(opts.shouldObserve).toBe(shouldObserve);
   });

@@ -1,3 +1,5 @@
+import { maskSqlText } from './sql-text.js';
+
 export const MAX_TABLES = 20;
 
 export interface TableExtraction {
@@ -62,22 +64,57 @@ function walk(
 const RAW_TABLE =
   /\b(?:from|join|into|update)\s+(?:only\s+)?([A-Za-z_][\w$]*(?:\.[A-Za-z_][\w$]*)?)/gi;
 
-/** Best-effort extraction for RawNode queries. */
+/** `alias AS (` / `alias (cols) AS [NOT] [MATERIALIZED] (` — a CTE definition. */
+const CTE_ALIAS =
+  /\b([A-Za-z_][\w$]*)\s*(?:\([^()]*\))?\s+as\s+(?:not\s+)?(?:materialized\s+)?\(/gi;
+
+/**
+ * Best-effort extraction for RawNode queries, on masked SQL so table-like
+ * words inside comments and string literals are never matched. CTE aliases
+ * are excluded (they are not real tables), and tables referenced by the main
+ * statement (paren-depth 0) are ordered before tables that only appear
+ * inside CTE bodies/subqueries — so `primaryTable`/`db.collection.name`
+ * agrees with the operation verb for `WITH ... INSERT INTO target ...`.
+ */
 export function extractTablesFromRawSql(sql: string): TableExtraction {
-  const tables: string[] = [];
-  const seen = new Set<string>();
-  let truncated = false;
+  const masked = maskSqlText(sql);
+  const aliases = collectCteAliases(masked);
+  const topLevel: string[] = [];
+  const nested: string[] = [];
+  const seen = new Map<string, number>(); // name → paren depth of first sighting
   const regex = new RegExp(RAW_TABLE.source, RAW_TABLE.flags);
+  let pos = 0;
+  let depth = 0;
   let match: RegExpExecArray | null;
-  while ((match = regex.exec(sql)) !== null) {
-    const name = match[1];
-    if (!name || seen.has(name)) continue;
-    if (tables.length >= MAX_TABLES) {
-      truncated = true;
-      break;
+  while ((match = regex.exec(masked)) !== null) {
+    for (; pos < match.index; pos += 1) {
+      const ch = masked[pos];
+      if (ch === '(') depth += 1;
+      else if (ch === ')' && depth > 0) depth -= 1;
     }
-    seen.add(name);
-    tables.push(name);
+    const name = match[1];
+    if (!name || aliases.has(name.toLowerCase())) continue;
+    const seenDepth = seen.get(name);
+    if (seenDepth === undefined) {
+      seen.set(name, depth);
+      (depth === 0 ? topLevel : nested).push(name);
+    } else if (depth === 0 && seenDepth > 0) {
+      // First sighting was inside a CTE body; a depth-0 reference promotes it.
+      nested.splice(nested.indexOf(name), 1);
+      topLevel.push(name);
+      seen.set(name, 0);
+    }
   }
-  return { tables, truncated };
+  const all = [...topLevel, ...nested];
+  return { tables: all.slice(0, MAX_TABLES), truncated: all.length > MAX_TABLES };
+}
+
+/** CTE alias names of a masked `WITH ...` query, lowercased; empty otherwise. */
+function collectCteAliases(masked: string): Set<string> {
+  const aliases = new Set<string>();
+  if (!/^\s*with\b/i.test(masked)) return aliases;
+  const regex = new RegExp(CTE_ALIAS.source, CTE_ALIAS.flags);
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(masked)) !== null) aliases.add(match[1]!.toLowerCase());
+  return aliases;
 }

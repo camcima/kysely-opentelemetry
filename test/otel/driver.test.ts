@@ -1,9 +1,14 @@
-import { SpanKind, SpanStatusCode, trace } from '@opentelemetry/api';
+import { metrics, SpanKind, SpanStatusCode, trace } from '@opentelemetry/api';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createAnalyzer } from '../../src/analysis/analyze.js';
 import { ObservedConnection } from '../../src/observed-connection.js';
 import { ObservedDriver } from '../../src/observed-driver.js';
 import { normalizeOptions, type KyselyOtelOptions } from '../../src/options.js';
+import {
+  createDurationHistogram,
+  createWaitTimeHistogram,
+  resolveWaitTimeAttributes,
+} from '../../src/otel/metrics.js';
 import { compile } from '../helpers/compile.js';
 import { createFakeDialect } from '../helpers/fake-dialect.js';
 import { setupOtel } from '../helpers/otel.js';
@@ -24,10 +29,16 @@ function makeDriver(
 ) {
   const options = normalizeOptions(overrides);
   const { driver: fakeDriver } = createFakeDialect(script);
+  const meter = metrics.getMeter('test');
   const driver = new ObservedDriver(fakeDriver, {
     options,
     analyze: createAnalyzer(options),
     tracer: trace.getTracer('test'),
+    ...(options.metrics.operationDuration && { histogram: createDurationHistogram(meter) }),
+    ...(options.metrics.connectionWaitTime && {
+      waitTimeHistogram: createWaitTimeHistogram(meter),
+      waitTimeAttributes: resolveWaitTimeAttributes(options, 'postgresql'),
+    }),
     dbSystem: 'postgresql',
   });
   return { driver, fakeDriver };
@@ -45,11 +56,39 @@ describe('ObservedDriver connection wrapping', () => {
     expect(second).toBe(first);
   });
 
-  it('records acquire duration on the wrapper', async () => {
+  it('records acquire duration on the wrapper for the first query span', async () => {
     const { driver, fakeDriver } = makeDriver();
     fakeDriver.acquireDelayMs = 15;
     const connection = (await driver.acquireConnection()) as ObservedConnection;
     expect(connection.acquireDurationMs).toBeGreaterThanOrEqual(10);
+  });
+
+  it('records the connection wait_time metric on acquire with a pool name', async () => {
+    const { driver } = makeDriver({ serverAddress: 'db.internal', serverPort: 5432 });
+    await driver.acquireConnection();
+    const metric = await otel.findMetric('db.client.connection.wait_time');
+    expect(metric).toBeDefined();
+    const point = metric!.dataPoints[0] as any;
+    expect(point.value.count).toBe(1);
+    expect(point.attributes['db.client.connection.pool.name']).toBe('db.internal:5432');
+  });
+
+  it('records no wait_time metric when metrics are disabled', async () => {
+    const { driver } = makeDriver({ metrics: false });
+    await driver.acquireConnection();
+    expect(await otel.findMetric('db.client.connection.wait_time')).toBeUndefined();
+  });
+
+  it('records the wait_time value in seconds reflecting the real elapsed wait', async () => {
+    const { driver, fakeDriver } = makeDriver();
+    fakeDriver.acquireDelayMs = 15;
+    await driver.acquireConnection();
+    const metric = await otel.findMetric('db.client.connection.wait_time');
+    const point = metric!.dataPoints[0] as any;
+    // Guards the ms→s conversion: a double-conversion or dropped measurement
+    // would record ~0.000015 or 0, a missed conversion would record ~15.
+    expect(point.value.sum).toBeGreaterThanOrEqual(0.01);
+    expect(point.value.sum).toBeLessThan(2);
   });
 
   it('always passes the INNER connection to the inner driver', async () => {

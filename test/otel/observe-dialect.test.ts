@@ -78,12 +78,39 @@ describe('observeDialect end-to-end', () => {
   it('records the duration metric end-to-end', async () => {
     const { db } = makeDb();
     await db.selectFrom('orders').selectAll().execute();
+    const metric = await otel.findMetric('db.client.operation.duration');
+    expect(metric).toBeDefined();
+  });
+
+  it('records the connection wait_time metric end-to-end', async () => {
+    const { db } = makeDb(undefined, { namespace: 'shop' });
+    await db.selectFrom('orders').selectAll().execute();
+    const metric = await otel.findMetric('db.client.connection.wait_time');
+    expect(metric).toBeDefined();
+    expect((metric!.dataPoints[0] as any).attributes['db.client.connection.pool.name']).toBe(
+      'shop',
+    );
+  });
+
+  it('gates each histogram independently via the metrics object form', async () => {
+    const { db } = makeDb(undefined, { metrics: { connectionWaitTime: false } });
+    await db.selectFrom('orders').selectAll().execute();
     const metricData = await otel.collectMetrics();
-    const metric = metricData
+    const names = metricData
       .flatMap((rm) => rm.scopeMetrics)
       .flatMap((sm) => sm.metrics)
-      .find((m) => m.descriptor.name === 'db.client.operation.duration');
-    expect(metric).toBeDefined();
+      .map((m) => m.descriptor.name);
+    expect(names).toContain('db.client.operation.duration');
+    expect(names).not.toContain('db.client.connection.wait_time');
+  });
+
+  it('uses the poolName option as db.client.connection.pool.name', async () => {
+    const { db } = makeDb(undefined, { poolName: 'read-replica', serverAddress: 'db.internal' });
+    await db.selectFrom('orders').selectAll().execute();
+    const metric = await otel.findMetric('db.client.connection.wait_time');
+    expect((metric!.dataPoints[0] as any).attributes['db.client.connection.pool.name']).toBe(
+      'read-replica',
+    );
   });
 
   it('enabled: false returns the dialect untouched (zero overhead, zero spans)', async () => {
@@ -96,11 +123,7 @@ describe('observeDialect end-to-end', () => {
     const { db } = makeDb(undefined, { metrics: false });
     await db.selectFrom('orders').selectAll().execute();
     expect(otel.spanExporter.getFinishedSpans()).toHaveLength(1);
-    const metricData = await otel.collectMetrics();
-    const metric = metricData
-      .flatMap((rm) => rm.scopeMetrics)
-      .flatMap((sm) => sm.metrics)
-      .find((m) => m.descriptor.name === 'db.client.operation.duration');
+    const metric = await otel.findMetric('db.client.operation.duration');
     expect(metric).toBeUndefined();
   });
 

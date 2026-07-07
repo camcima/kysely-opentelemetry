@@ -85,4 +85,34 @@ describe('extractTablesFromRawSql', () => {
     expect(result.tables).toHaveLength(20);
     expect(result.truncated).toBe(true);
   });
+
+  it('excludes CTE aliases and puts main-statement tables before CTE-body tables', () => {
+    const { tables } = extractTablesFromRawSql(
+      'WITH agg AS (SELECT * FROM raw_events) INSERT INTO summary SELECT * FROM agg',
+    );
+    expect(tables).toEqual(['summary', 'raw_events']);
+  });
+
+  it('excludes all aliases of a multi-CTE query', () => {
+    const { tables } = extractTablesFromRawSql(
+      'WITH a AS (SELECT 1 FROM x), b AS (SELECT 2 FROM y) SELECT * FROM a JOIN b ON 1=1 JOIN z ON 1=1',
+    );
+    expect(tables).toEqual(['z', 'x', 'y']);
+  });
+
+  it('handles RECURSIVE and column-list CTE aliases', () => {
+    const { tables } = extractTablesFromRawSql(
+      'WITH RECURSIVE tree (id, parent) AS (SELECT id, parent FROM nodes) SELECT * FROM tree',
+    );
+    expect(tables).toEqual(['nodes']);
+  });
+
+  it('does not extract table names from comments or string literals', () => {
+    expect(extractTablesFromRawSql('SELECT * FROM orders -- FROM fake_table\n').tables).toEqual([
+      'orders',
+    ]);
+    expect(
+      extractTablesFromRawSql("SELECT * FROM orders WHERE note = 'copied FROM haha'").tables,
+    ).toEqual(['orders']);
+  });
 });
