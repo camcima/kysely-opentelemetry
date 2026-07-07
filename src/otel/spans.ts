@@ -32,9 +32,10 @@ const warnCounts = new Map<string, number>();
  * Instrumentation-internal failures: warn through OTel diagnostics, capped
  * per context string so one noisy failure class cannot silence the others.
  */
-export function warnLimited(context: string, error: unknown): void {
+export function warnLimited(context: string, error?: unknown): void {
   const count = warnCounts.get(context) ?? 0;
   if (count >= MAX_WARNINGS_PER_CONTEXT) return;
   warnCounts.set(context, count + 1);
-  diag.warn(`kysely-opentelemetry: ${context}`, error);
+  if (error === undefined) diag.warn(`kysely-opentelemetry: ${context}`);
+  else diag.warn(`kysely-opentelemetry: ${context}`, error);
 }
