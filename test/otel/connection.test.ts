@@ -97,6 +97,21 @@ describe('ObservedConnection.executeQuery', () => {
     expect(result.rows).toEqual([]);
     expect(otel.spanExporter.getFinishedSpans()).toHaveLength(0);
   });
+
+  it('NO-PII: comment content never reaches span attributes in sanitized mode', async () => {
+    const { connection } = makeConnection();
+    const raw = CompiledQuery.raw(
+      'SELECT * FROM orders -- customer_email=alice@example.com trace=zzTRACEzz',
+      [],
+    );
+    await connection.executeQuery(raw);
+
+    const span = otel.spanExporter.getFinishedSpans()[0]!;
+    const all = JSON.stringify(span.attributes);
+    expect(all).not.toContain('alice@example.com');
+    expect(all).not.toContain('zzTRACEzz');
+    expect(span.attributes['db.query.text']).toBe('SELECT * FROM orders');
+  });
 });
 
 describe('ObservedConnection.streamQuery', () => {

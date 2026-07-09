@@ -84,6 +84,46 @@ describe('fingerprintSql', () => {
   });
 });
 
+describe('comment stripping', () => {
+  it('removes line comments and their PII content', () => {
+    expect(
+      fingerprintSql('SELECT * FROM users WHERE id = 1 -- customer_email=alice@example.com'),
+    ).toBe('SELECT * FROM users WHERE id = ?');
+  });
+
+  it('removes block comments and their content', () => {
+    expect(fingerprintSql('SELECT 1 /* trace=abc123, request=xyz */ FROM t')).toBe(
+      'SELECT ? FROM t',
+    );
+  });
+
+  it('produces identical fingerprints regardless of comment content (grouping stability)', () => {
+    const a = fingerprintSql('SELECT * FROM t WHERE id = $1 /* req=aaa111 */');
+    const b = fingerprintSql('SELECT * FROM t WHERE id = $1 /* req=bbb222 */');
+    expect(a).toBe(b);
+    expect(a).toBe('SELECT * FROM t WHERE id = ?');
+  });
+
+  it('does not treat comment markers inside string literals as comments', () => {
+    expect(fingerprintSql("SELECT '--keep', col FROM t")).toBe('SELECT ?, col FROM t');
+    expect(fingerprintSql("SELECT '/* keep */', col FROM t")).toBe('SELECT ?, col FROM t');
+  });
+
+  it('preserves double-quoted identifiers containing comment markers', () => {
+    expect(fingerprintSql('SELECT "a--b" FROM t')).toBe('SELECT "a--b" FROM t');
+  });
+
+  it('removes an unterminated block comment to end of input', () => {
+    expect(fingerprintSql('SELECT 1 /* oops')).toBe('SELECT ?');
+  });
+
+  it('handles comments adjacent to literals', () => {
+    expect(fingerprintSql("SELECT 'a'/* tag */ FROM t WHERE x = 1-- trailing")).toBe(
+      'SELECT ? FROM t WHERE x = ?',
+    );
+  });
+});
+
 describe('known limitation: Postgres standard_conforming_strings', () => {
   it('a literal backslash before a closing quote over-consumes into the next literal', () => {
     // In Postgres (standard_conforming_strings = on) 'C:\' is a complete

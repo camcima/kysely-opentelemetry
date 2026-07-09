@@ -270,6 +270,7 @@ Each layer instruments a different boundary — this library instruments Kysely'
 ## Safety model
 
 - **Sanitized by default.** `queryText: 'sanitized'` is the default; no code path in this library requires you to opt out of safety to get useful telemetry.
+- **Comments are stripped.** SQL comments (`--` and `/* … */`) are removed before fingerprinting, so query-tagging comments (trace IDs, request IDs, sqlcommenter-style annotations) never appear in `db.query.text`, `db.query.fingerprint`, or `db.query.hash`, and cannot fragment query grouping.
 - **No parameter capture, ever.** Bind parameter values that this library reads (the parameters array, row data) are never emitted, in any mode, through any attribute, span event, or metric — there is no option to enable it. Only `kysely.query.parameter_count` (a number) is emitted.
 - **Safe failure.** If the fingerprint sanitizer cannot process a query's SQL, `db.query.text` is omitted and `kysely.query.sanitization_error = true` is set instead of emitting unsanitized text.
 - **Instrumentation never breaks a query.** Every analysis and OTel call is wrapped; if instrumentation itself throws internally, the query still executes un-instrumented and a rate-limited `diag.warn` (OpenTelemetry diagnostics, never `console`) reports it. Query errors are always rethrown to the caller unchanged — this library never wraps, swallows, or alters them.
