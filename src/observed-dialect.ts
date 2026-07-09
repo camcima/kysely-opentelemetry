@@ -19,8 +19,16 @@ import {
 import { detectDbSystem } from './otel/system.js';
 import { VERSION } from './version.js';
 
+/** Cross-copy idempotency marker. `instanceof` fails when two physical copies
+ *  of this package are loaded (pnpm-linked duplicates, or one app loading
+ *  both the ESM and CJS builds); Symbol.for is process-global, so any copy
+ *  recognizes any other copy's wrapper. The explicit `unique symbol`
+ *  annotation is required for use as a computed class-property key (TS1166). */
+const OBSERVED_MARKER: unique symbol = Symbol.for('kysely-opentelemetry.observed');
+
 export class ObservedDialect implements Dialect {
   private readonly options: NormalizedOptions;
+  readonly [OBSERVED_MARKER] = true;
 
   /**
    * @param inner The dialect to instrument.
@@ -77,7 +85,14 @@ export class ObservedDialect implements Dialect {
  * Wrapping an already-observed dialect returns it unchanged.
  */
 export function observeDialect(dialect: Dialect, options?: KyselyOtelOptions): Dialect {
-  if (dialect instanceof ObservedDialect) return dialect;
+  if (isObserved(dialect)) return dialect;
   if (!(options?.enabled ?? true)) return dialect;
   return new ObservedDialect(dialect, options);
+}
+
+function isObserved(dialect: Dialect): boolean {
+  return (
+    dialect instanceof ObservedDialect ||
+    (dialect as Record<PropertyKey, unknown>)[OBSERVED_MARKER] === true
+  );
 }
