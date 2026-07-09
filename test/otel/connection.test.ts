@@ -173,6 +173,24 @@ describe('ObservedConnection.streamQuery', () => {
     const metric = await otel.findMetric('db.client.operation.duration');
     expect(metric?.dataPoints ?? []).toHaveLength(0);
   });
+
+  it('ends the span with error status when the inner streamQuery throws synchronously', async () => {
+    const boom = new Error('streaming not supported');
+    const { connection, inner } = makeConnection();
+    (inner as any).streamQuery = () => {
+      throw boom;
+    };
+
+    expect(() => connection.streamQuery(SELECT, 1)).toThrow(boom);
+
+    const spans = otel.spanExporter.getFinishedSpans();
+    expect(spans).toHaveLength(1);
+    expect(spans[0]!.status.code).toBe(SpanStatusCode.ERROR);
+    expect(spans[0]!.attributes['error.type']).toBe('Error');
+
+    const metric = await otel.findMetric('db.client.operation.duration');
+    expect((metric!.dataPoints[0] as any).attributes['error.type']).toBe('Error');
+  });
 });
 
 describe('shouldObserve filter', () => {
