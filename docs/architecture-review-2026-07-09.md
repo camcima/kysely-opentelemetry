@@ -174,3 +174,14 @@ pnpm build      # ESM, CJS, and declarations built successfully
 These results show the current tested contract is healthy; they do not cover
 the comment-sanitization, synchronous stream-factory, or invalid-option cases
 described above.
+
+## Disposition (2026-07-09)
+
+| Finding | Outcome |
+|---------|---------|
+| 1 (comments in sanitized text) | Fixed — `fingerprintSql` strips comments via the pre-existing `sql-text.ts` scanner (no new lexer was needed). |
+| 2 (error messages exported) | Default kept (matches mainstream OTel DB instrumentations); added `recordErrorMessages: false` opt-out. |
+| 3 (sync streamQuery throw) | Fixed — inner iterator creation wrapped; note all built-in Kysely drivers are async generators, so this only affected third-party dialects. |
+| 4 (maxQueryTextLength) | Fixed — invalid values fall back to the default with a diagnostic warning. |
+| 5 (raw-SQL quoted identifiers) | Deferred — Low severity, documented best-effort. Correction: `DELETE FROM x` **is** extracted (the regex matches `from`); only TRUNCATE/CREATE/ALTER/DROP targets are missed. |
+| 6 (instanceof idempotency) | Fixed — `Symbol.for('kysely-opentelemetry.observed')` marker recognized across package copies. |
