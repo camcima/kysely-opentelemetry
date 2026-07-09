@@ -45,6 +45,11 @@ export interface KyselyOtelOptions {
   transactions?: boolean;
   /** span.recordException on query failure. Default true. */
   recordExceptions?: boolean;
+  /** Set error.message as the span status message on failure. Default true.
+   *  Driver error text can echo a submitted value (e.g. constraint messages);
+   *  set false — together with recordExceptions: false — for a strict
+   *  no-value-capture posture. */
+  recordErrorMessages?: boolean;
   /** Skip observing a query (no span, no metric) by returning false.
    *  Fail-open: a throwing filter observes the query anyway. */
   shouldObserve?: (ctx: QueryContext) => boolean;
@@ -74,6 +79,7 @@ export interface NormalizedOptions {
   readonly metrics: Readonly<Required<MetricsOptions>>;
   readonly transactions: boolean;
   readonly recordExceptions: boolean;
+  readonly recordErrorMessages: boolean;
   readonly shouldObserve?: (ctx: QueryContext) => boolean;
   readonly attributes?: (ctx: QueryContext) => Attributes;
   readonly redact?: (sql: string) => string;
@@ -110,6 +116,7 @@ export function normalizeOptions(options: KyselyOtelOptions = {}): NormalizedOpt
     metrics: normalizeMetrics(options.metrics ?? true),
     transactions: options.transactions ?? true,
     recordExceptions: options.recordExceptions ?? true,
+    recordErrorMessages: options.recordErrorMessages ?? true,
     ...(options.shouldObserve !== undefined && { shouldObserve: options.shouldObserve }),
     ...(options.attributes !== undefined && { attributes: options.attributes }),
     ...(options.redact !== undefined && { redact: options.redact }),

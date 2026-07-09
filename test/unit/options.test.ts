@@ -16,6 +16,7 @@ describe('normalizeOptions', () => {
       metrics: { operationDuration: true, connectionWaitTime: true },
       transactions: true,
       recordExceptions: true,
+      recordErrorMessages: true,
     });
     expect(opts.dbSystem).toBeUndefined();
     expect(opts.attributes).toBeUndefined();

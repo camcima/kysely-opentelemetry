@@ -54,6 +54,17 @@ describe('recordError', () => {
     recordError(span, new Error('x'), normalizeOptions({ recordExceptions: false }));
     expect(span.recordException).not.toHaveBeenCalled();
   });
+
+  it('omits the status message when recordErrorMessages is false', () => {
+    const span = fakeSpan();
+    recordError(
+      span,
+      new Error('value "alice@example.com" violates constraint'),
+      normalizeOptions({ recordErrorMessages: false }),
+    );
+    expect(span.setStatus).toHaveBeenCalledWith({ code: SpanStatusCode.ERROR });
+    expect(span.setAttribute).toHaveBeenCalledWith('error.type', 'Error');
+  });
 });
 
 describe('warnLimited', () => {
