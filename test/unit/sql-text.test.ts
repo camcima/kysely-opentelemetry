@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { maskSqlText } from '../../src/analysis/sql-text.js';
+import { maskSqlText, stripSqlComments } from '../../src/analysis/sql-text.js';
 
 /**
  * maskSqlText replaces comments, string literals, and quoted identifiers with
@@ -93,5 +93,42 @@ describe('maskSqlText', () => {
     expect(masked).toHaveLength(input.length);
     expect(masked).not.toContain('never closed');
     expect(masked.startsWith('id = ')).toBe(true);
+  });
+});
+
+describe('stripSqlComments', () => {
+  it('blanks line comments but preserves the rest verbatim', () => {
+    const out = stripSqlComments('SELECT 1 -- email=alice@example.com\nFROM t');
+    expect(out).not.toContain('alice@example.com');
+    expect(out.replace(/\s+/g, ' ').trim()).toBe('SELECT 1 FROM t');
+    expect(out).toHaveLength('SELECT 1 -- email=alice@example.com\nFROM t'.length);
+  });
+
+  it('blanks block comments', () => {
+    const out = stripSqlComments('SELECT 1 /* trace=abc123 */ FROM t');
+    expect(out).not.toContain('abc123');
+    expect(out.replace(/\s+/g, ' ').trim()).toBe('SELECT 1 FROM t');
+  });
+
+  it('preserves string literals verbatim, including comment markers inside them', () => {
+    expect(stripSqlComments("SELECT '--not a comment' FROM t")).toBe(
+      "SELECT '--not a comment' FROM t",
+    );
+    expect(stripSqlComments("SELECT '/* keep */' FROM t")).toBe("SELECT '/* keep */' FROM t");
+  });
+
+  it('preserves quoted identifiers and dollar-quoted strings verbatim', () => {
+    expect(stripSqlComments('SELECT "a--b", `c--d`, [e--f] FROM t')).toBe(
+      'SELECT "a--b", `c--d`, [e--f] FROM t',
+    );
+    expect(stripSqlComments('SELECT $tag$ -- inside $tag$ FROM t')).toBe(
+      'SELECT $tag$ -- inside $tag$ FROM t',
+    );
+  });
+
+  it('blanks an unterminated block comment to end of input', () => {
+    const out = stripSqlComments('SELECT 1 /* oops');
+    expect(out.trimEnd()).toBe('SELECT 1');
+    expect(out).toHaveLength('SELECT 1 /* oops'.length);
   });
 });
