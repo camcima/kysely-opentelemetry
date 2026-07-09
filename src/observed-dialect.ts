@@ -93,6 +93,6 @@ export function observeDialect(dialect: Dialect, options?: KyselyOtelOptions): D
 function isObserved(dialect: Dialect): boolean {
   return (
     dialect instanceof ObservedDialect ||
-    (dialect as Record<PropertyKey, unknown>)[OBSERVED_MARKER] === true
+    (dialect as unknown as Record<PropertyKey, unknown>)[OBSERVED_MARKER] === true
   );
 }
