@@ -131,4 +131,16 @@ describe('stripSqlComments', () => {
     expect(out.trimEnd()).toBe('SELECT 1');
     expect(out).toHaveLength('SELECT 1 /* oops'.length);
   });
+
+  it('blanks an unterminated dollar-quote to end of input (fail closed)', () => {
+    const out = stripSqlComments('SELECT 1 WHERE x = $foo$ -- email=alice@example.com');
+    expect(out).not.toContain('alice@example.com');
+    expect(out.trimEnd()).toBe('SELECT 1 WHERE x =');
+  });
+
+  it('blanks an unterminated string literal to end of input (fail closed)', () => {
+    const out = stripSqlComments("SELECT 'abc -- pwd=hunter2");
+    expect(out).not.toContain('hunter2');
+    expect(out.trimEnd()).toBe('SELECT');
+  });
 });

@@ -122,6 +122,11 @@ describe('comment stripping', () => {
       'SELECT ? FROM t WHERE x = ?',
     );
   });
+
+  it('does not leak comments trailing an unterminated dollar-quote (fail closed)', () => {
+    const out = fingerprintSql('SELECT 1 WHERE x = $foo$ -- email=alice@example.com');
+    expect(out).not.toContain('alice@example.com');
+  });
 });
 
 describe('known limitation: Postgres standard_conforming_strings', () => {
@@ -129,8 +134,12 @@ describe('known limitation: Postgres standard_conforming_strings', () => {
     // In Postgres (standard_conforming_strings = on) 'C:\' is a complete
     // string, but the scrubber applies MySQL escape semantics, so it consumes
     // through the next quote and swallows the SQL between the two literals.
-    // Pinned so any future regex change surfaces here deliberately.
+    // The trailing `'` before `x'` then opens a *new*, unterminated quoted
+    // region (nothing closes it before end of input), which is blanked to
+    // end of input (fail-closed) rather than copied verbatim, so the final
+    // `'` is dropped too. Pinned so any future regex change surfaces here
+    // deliberately.
     const result = fingerprintSql("SELECT * FROM t WHERE path = 'C:\\' AND name = 'x'");
-    expect(result).toBe("SELECT * FROM t WHERE path = ?x'");
+    expect(result).toBe('SELECT * FROM t WHERE path = ?x');
   });
 });

@@ -9,11 +9,15 @@
  * (non-nested), `'...'` string literals (`''` doubling and `\'` escapes),
  * `"..."` and
  * `` `...` `` quoted identifiers, `[...]` bracket identifiers, and
- * `$tag$...$tag$` dollar-quoted strings. An unterminated construct masks to
- * the end of the input — conservative: better to see less than to misread.
+ * `$tag$...$tag$` dollar-quoted strings. An unterminated construct is always
+ * blanked to the end of the input — conservative and fail-closed: better to
+ * see less than to misread (or leak) whatever follows.
  *
  * `stripSqlComments` shares the same scanner but blanks only comments,
- * leaving all quoted content and code verbatim.
+ * leaving all *terminated* quoted content and code verbatim. Unterminated
+ * regions are blanked to end of input regardless, the same as `maskSqlText`,
+ * so a comment (or anything else) trailing an unterminated string,
+ * identifier, or dollar-quote can never leak through.
  */
 const DOLLAR_TAG = /^\$([A-Za-z_][A-Za-z0-9_]*)?\$/;
 
@@ -23,9 +27,12 @@ export function maskSqlText(sql: string): string {
   return transformSql(sql, () => true);
 }
 
-/** Blanks only comments (to spaces, preserving length); strings, quoted
- *  identifiers, and dollar-quoted regions pass through verbatim. Comment
- *  markers inside quoted regions are never treated as comments. */
+/** Blanks only comments (to spaces, preserving length); terminated strings,
+ *  quoted identifiers, and dollar-quoted regions pass through verbatim.
+ *  Comment markers inside quoted regions are never treated as comments. An
+ *  unterminated string, identifier, or dollar-quote is blanked to end of
+ *  input (fail-closed), so any trailing content — including what looks like
+ *  a comment — can never leak through. */
 export function stripSqlComments(sql: string): string {
   return transformSql(sql, (region) => region === 'comment');
 }
@@ -68,10 +75,15 @@ function transformSql(sql: string, shouldMask: (region: SqlRegion) => boolean): 
 }
 
 /** Emits [from, to) — or to end of input when `to` is -1 — as spaces when
- *  masking, verbatim otherwise; returns the next scan position. */
+ *  masking, verbatim otherwise; returns the next scan position. An
+ *  unterminated region (`to === -1`) is always blanked regardless of the
+ *  caller's mask decision (fail closed) so a comment/PII trailing an
+ *  unterminated string, identifier, or dollar-quote can never leak through
+ *  `stripSqlComments`'s verbatim-copy path. */
 function emit(sql: string, out: string[], from: number, to: number, mask: boolean): number {
   const end = to === -1 ? sql.length : to;
-  for (let i = from; i < end; i += 1) out.push(mask ? ' ' : sql[i]!);
+  const blank = mask || to === -1;
+  for (let i = from; i < end; i += 1) out.push(blank ? ' ' : sql[i]!);
   return end;
 }
 
