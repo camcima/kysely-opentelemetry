@@ -104,9 +104,19 @@ export class ObservedConnection implements DatabaseConnection {
     if (!started) return this.inner.streamQuery<R>(compiledQuery, chunkSize, options);
 
     const { span, ctx, spanContext, startTime } = started;
-    const inner = context.with(spanContext, () =>
-      this.inner.streamQuery<R>(compiledQuery, chunkSize, options),
-    );
+    // Built-in dialects use async generators (never throw here), but the
+    // interface permits a plain method that throws synchronously — without
+    // this guard that span would leak open, unregistered in #openStreamEnders.
+    let inner: AsyncIterableIterator<QueryResult<R>>;
+    try {
+      inner = context.with(spanContext, () =>
+        this.inner.streamQuery<R>(compiledQuery, chunkSize, options),
+      );
+    } catch (error) {
+      this.finishFailure(span, ctx, startTime, error);
+      span.end();
+      throw error;
+    }
     let rowCount = 0;
     let ended = false;
 

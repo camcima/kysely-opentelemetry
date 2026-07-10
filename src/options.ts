@@ -1,5 +1,8 @@
 import type { Attributes, MeterProvider, TracerProvider } from '@opentelemetry/api';
 import type { QueryContext } from './analysis/analyze.js';
+import { warnLimited } from './otel/spans.js';
+
+const DEFAULT_MAX_QUERY_TEXT_LENGTH = 4096;
 
 export interface MetricsOptions {
   /** Emit the db.client.operation.duration histogram. Default true. */
@@ -26,7 +29,9 @@ export interface KyselyOtelOptions {
   poolName?: string;
   /** db.query.text emission. Default 'sanitized'. */
   queryText?: 'off' | 'sanitized' | 'parameterized';
-  /** Max chars for db.query.text and db.query.fingerprint. Default 4096. */
+  /** Max chars for db.query.text and db.query.fingerprint. Must be a finite
+   *  non-negative number (fractions truncate); invalid values fall back to the
+   *  default with a diagnostic warning. Default 4096. */
   maxQueryTextLength?: number;
   fingerprint?: boolean;
   summary?: boolean;
@@ -40,6 +45,11 @@ export interface KyselyOtelOptions {
   transactions?: boolean;
   /** span.recordException on query failure. Default true. */
   recordExceptions?: boolean;
+  /** Set error.message as the span status message on failure. Default true.
+   *  Driver error text can echo a submitted value (e.g. constraint messages);
+   *  set false — together with recordExceptions: false — for a strict
+   *  no-value-capture posture. */
+  recordErrorMessages?: boolean;
   /** Skip observing a query (no span, no metric) by returning false.
    *  Fail-open: a throwing filter observes the query anyway. */
   shouldObserve?: (ctx: QueryContext) => boolean;
@@ -69,11 +79,24 @@ export interface NormalizedOptions {
   readonly metrics: Readonly<Required<MetricsOptions>>;
   readonly transactions: boolean;
   readonly recordExceptions: boolean;
+  readonly recordErrorMessages: boolean;
   readonly shouldObserve?: (ctx: QueryContext) => boolean;
   readonly attributes?: (ctx: QueryContext) => Attributes;
   readonly redact?: (sql: string) => string;
   readonly tracerProvider?: TracerProvider;
   readonly meterProvider?: MeterProvider;
+}
+
+/** A negative value has surprising String.prototype.slice semantics (-1 keeps
+ *  all but the last char) and Infinity removes the cap entirely — both defeat
+ *  the intended bound, so invalid input falls back to the default loudly. */
+function normalizeMaxQueryTextLength(value: number | undefined): number {
+  if (value === undefined) return DEFAULT_MAX_QUERY_TEXT_LENGTH;
+  if (!Number.isFinite(value) || value < 0) {
+    warnLimited('invalid maxQueryTextLength; using default 4096', value);
+    return DEFAULT_MAX_QUERY_TEXT_LENGTH;
+  }
+  return Math.trunc(value);
 }
 
 export function normalizeOptions(options: KyselyOtelOptions = {}): NormalizedOptions {
@@ -85,7 +108,7 @@ export function normalizeOptions(options: KyselyOtelOptions = {}): NormalizedOpt
     ...(options.serverPort !== undefined && { serverPort: options.serverPort }),
     ...(options.poolName !== undefined && { poolName: options.poolName }),
     queryText: options.queryText ?? 'sanitized',
-    maxQueryTextLength: options.maxQueryTextLength ?? 4096,
+    maxQueryTextLength: normalizeMaxQueryTextLength(options.maxQueryTextLength),
     fingerprint: options.fingerprint ?? true,
     summary: options.summary ?? true,
     tables: options.tables ?? true,
@@ -93,6 +116,7 @@ export function normalizeOptions(options: KyselyOtelOptions = {}): NormalizedOpt
     metrics: normalizeMetrics(options.metrics ?? true),
     transactions: options.transactions ?? true,
     recordExceptions: options.recordExceptions ?? true,
+    recordErrorMessages: options.recordErrorMessages ?? true,
     ...(options.shouldObserve !== undefined && { shouldObserve: options.shouldObserve }),
     ...(options.attributes !== undefined && { attributes: options.attributes }),
     ...(options.redact !== undefined && { redact: options.redact }),

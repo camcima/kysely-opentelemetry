@@ -16,6 +16,7 @@ describe('normalizeOptions', () => {
       metrics: { operationDuration: true, connectionWaitTime: true },
       transactions: true,
       recordExceptions: true,
+      recordErrorMessages: true,
     });
     expect(opts.dbSystem).toBeUndefined();
     expect(opts.attributes).toBeUndefined();
@@ -71,5 +72,20 @@ describe('normalizeOptions', () => {
     const opts = normalizeOptions({ tracerProvider, meterProvider });
     expect(opts.tracerProvider).toBe(tracerProvider);
     expect(opts.meterProvider).toBe(meterProvider);
+  });
+});
+
+describe('maxQueryTextLength validation', () => {
+  it('accepts valid values, truncating fractions', () => {
+    expect(normalizeOptions({ maxQueryTextLength: 0 }).maxQueryTextLength).toBe(0);
+    expect(normalizeOptions({ maxQueryTextLength: 100 }).maxQueryTextLength).toBe(100);
+    expect(normalizeOptions({ maxQueryTextLength: 1.9 }).maxQueryTextLength).toBe(1);
+  });
+
+  it('falls back to the default for negative, NaN, and non-finite values', () => {
+    expect(normalizeOptions({ maxQueryTextLength: -1 }).maxQueryTextLength).toBe(4096);
+    expect(normalizeOptions({ maxQueryTextLength: Number.NaN }).maxQueryTextLength).toBe(4096);
+    expect(normalizeOptions({ maxQueryTextLength: Infinity }).maxQueryTextLength).toBe(4096);
+    expect(normalizeOptions({ maxQueryTextLength: -Infinity }).maxQueryTextLength).toBe(4096);
   });
 });

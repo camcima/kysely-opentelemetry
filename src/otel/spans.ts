@@ -17,7 +17,7 @@ export function recordError(span: Span, error: unknown, options: NormalizedOptio
   span.setAttribute(ATTR_ERROR_TYPE, type);
   span.setStatus({
     code: SpanStatusCode.ERROR,
-    ...(error instanceof Error && { message: error.message }),
+    ...(options.recordErrorMessages && error instanceof Error && { message: error.message }),
   });
   if (options.recordExceptions && error instanceof Error) span.recordException(error);
   return type;

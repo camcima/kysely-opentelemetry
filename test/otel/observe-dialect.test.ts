@@ -9,7 +9,7 @@ import {
   InMemorySpanExporter,
   SimpleSpanProcessor,
 } from '@opentelemetry/sdk-trace-base';
-import { Kysely, type CompiledQuery } from 'kysely';
+import { Kysely, type CompiledQuery, type Dialect } from 'kysely';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { observeDialect, ObservedDialect } from '../../src/index.js';
 import { createFakeDialect } from '../helpers/fake-dialect.js';
@@ -189,5 +189,25 @@ describe('observeDialect end-to-end', () => {
     expect(metric).toBeDefined();
     await tracerProvider.shutdown();
     await meterProvider.shutdown();
+  });
+
+  it('does not re-wrap a dialect observed by another copy of the package', () => {
+    const { dialect } = createFakeDialect();
+    // Simulates an ObservedDialect from a second physical copy (pnpm link,
+    // dual ESM/CJS load): not instanceof our class, but carrying the marker.
+    const foreignWrapper = {
+      ...dialect,
+      [Symbol.for('kysely-opentelemetry.observed')]: true,
+    } as unknown as Dialect;
+    expect(observeDialect(foreignWrapper)).toBe(foreignWrapper);
+  });
+
+  it('re-wraps an object whose marker is present but not `true` (defensive validation)', () => {
+    const { dialect } = createFakeDialect();
+    const bogus = {
+      ...dialect,
+      [Symbol.for('kysely-opentelemetry.observed')]: 'yes',
+    } as unknown as Dialect;
+    expect(observeDialect(bogus)).not.toBe(bogus);
   });
 });
