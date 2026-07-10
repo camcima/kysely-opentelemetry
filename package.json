@@ -1,6 +1,6 @@
 {
   "name": "kysely-opentelemetry",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "OpenTelemetry instrumentation for Kysely: semconv-compliant spans and metrics with stable query grouping keys",
   "license": "MIT",
   "author": "Carlos Cima",
