@@ -3,3 +3,4 @@ dist/
 *.tsbuildinfo
 coverage/
 test-report*.junit.xml
+docs/superpowers/
