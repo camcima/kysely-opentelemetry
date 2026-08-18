@@ -85,7 +85,7 @@
     "better-sqlite3": "^13.0.1",
     "eslint": "^10.8.0",
     "eslint-config-prettier": "^10.1.8",
-    "kysely": "0.29.4",
+    "kysely": "0.29.5",
     "lefthook": "^2.1.10",
     "mysql2": "^3.23.2",
     "pg": "^8.22.0",
@@ -94,7 +94,7 @@
     "tarn": "^3.1.2",
     "tedious": "^20.0.0",
     "tsup": "^8.5.1",
-    "typescript": "^6.0.3",
+    "typescript": "^7.0.2",
     "typescript-eslint": "^8.65.0",
     "vitest": "^4.1.10"
   },
