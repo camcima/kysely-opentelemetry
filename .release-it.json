@@ -10,8 +10,8 @@
     "publish": true
   },
   "hooks": {
-    "before:init": ["pnpm run lint", "pnpm test"],
-    "after:bump": ["pnpm run sync-version", "pnpm run build"]
+    "before:init": ["pnpm run typecheck", "pnpm run lint", "pnpm test"],
+    "after:bump": ["pnpm run sync-version", "pnpm run build", "pnpm run check:dist"]
   },
   "plugins": {
     "@release-it/conventional-changelog": {

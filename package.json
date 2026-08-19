@@ -54,6 +54,7 @@
     "test:coverage": "vitest run test/unit test/otel --coverage --reporter=default --reporter=junit --outputFile=test-report.junit.xml",
     "test:integration:coverage": "vitest run test/integration --coverage --reporter=default --reporter=junit --outputFile=test-report.integration.junit.xml",
     "typecheck": "tsc --noEmit",
+    "check:dist": "publint && attw --pack . && node scripts/smoke-dist.mjs",
     "lint": "eslint src test",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
@@ -69,6 +70,7 @@
     "kysely": ">=0.27 <0.30"
   },
   "devDependencies": {
+    "@arethetypeswrong/cli": "^0.18.5",
     "@commitlint/cli": "^21.2.1",
     "@commitlint/config-conventional": "^21.2.0",
     "@eslint/js": "^10.0.1",
@@ -92,6 +94,7 @@
     "mysql2": "^3.23.2",
     "pg": "^8.22.0",
     "prettier": "^3.9.6",
+    "publint": "^0.3.24",
     "release-it": "^21.0.0",
     "tarn": "^3.1.2",
     "tedious": "^20.0.0",
