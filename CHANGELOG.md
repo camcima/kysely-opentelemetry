@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.2.1](https://github.com/camcima/kysely-opentelemetry/compare/v0.2.0...v0.2.1) (2026-08-19)
+
+### Bug Fixes
+
+* architecture review findings — raw-SQL table extraction, queryText validation, diag warnings, package-shape checks ([#23](https://github.com/camcima/kysely-opentelemetry/issues/23)) ([28ad28f](https://github.com/camcima/kysely-opentelemetry/commit/28ad28f8be34694dc9756dc3599c108a04b1d9cc))
+
 ## [0.2.0](https://github.com/camcima/kysely-opentelemetry/compare/v0.1.1...v0.2.0) (2026-07-10)
 
 ### Features
