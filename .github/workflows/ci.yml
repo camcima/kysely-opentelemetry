@@ -65,6 +65,7 @@ jobs:
       - run: pnpm lint
       - run: pnpm format:check
       - run: pnpm build
+      - run: pnpm check:dist
 
   integration:
     runs-on: ubuntu-latest

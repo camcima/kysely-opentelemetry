@@ -11,6 +11,7 @@ import { createAnalyzer } from './analysis/analyze.js';
 import { ObservedDriver } from './observed-driver.js';
 import type { ObservedConnectionDeps } from './observed-connection.js';
 import { normalizeOptions, type KyselyOtelOptions, type NormalizedOptions } from './options.js';
+import { warnLimited } from './otel/diagnostics.js';
 import {
   createDurationHistogram,
   createWaitTimeHistogram,
@@ -82,10 +83,17 @@ export class ObservedDialect implements Dialect {
 /**
  * Wrap a Kysely dialect with OpenTelemetry instrumentation.
  * With `enabled: false` the original dialect is returned untouched.
- * Wrapping an already-observed dialect returns it unchanged.
+ * Wrapping an already-observed dialect returns it unchanged; options passed
+ * on such a call are discarded, with a diagnostic warning so a config that
+ * silently fails to apply is debuggable.
  */
 export function observeDialect(dialect: Dialect, options?: KyselyOtelOptions): Dialect {
-  if (isObserved(dialect)) return dialect;
+  if (isObserved(dialect)) {
+    if (options !== undefined && Object.keys(options).length > 0) {
+      warnLimited('observeDialect called on an already-observed dialect; options are ignored');
+    }
+    return dialect;
+  }
   if (!(options?.enabled ?? true)) return dialect;
   return new ObservedDialect(dialect, options);
 }

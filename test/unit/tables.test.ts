@@ -115,4 +115,73 @@ describe('extractTablesFromRawSql', () => {
       extractTablesFromRawSql("SELECT * FROM orders WHERE note = 'copied FROM haha'").tables,
     ).toEqual(['orders']);
   });
+
+  it('extracts double-quoted table names, never the keyword after them', () => {
+    expect(extractTablesFromRawSql('SELECT * FROM "orders" WHERE id = 1').tables).toEqual([
+      'orders',
+    ]);
+    expect(
+      extractTablesFromRawSql('SELECT * FROM "orders" JOIN "customers" ON 1=1').tables,
+    ).toEqual(['orders', 'customers']);
+  });
+
+  it('extracts backtick- and bracket-quoted table names', () => {
+    expect(extractTablesFromRawSql('SELECT * FROM `orders` WHERE x = 1').tables).toEqual([
+      'orders',
+    ]);
+    expect(extractTablesFromRawSql('SELECT * FROM [orders] WHERE x = 1').tables).toEqual([
+      'orders',
+    ]);
+  });
+
+  it('extracts schema-qualified quoted names', () => {
+    expect(extractTablesFromRawSql('SELECT * FROM "public"."orders" WHERE id = 1').tables).toEqual([
+      'public.orders',
+    ]);
+  });
+
+  it('skips non-simple quoted names without misreading the following keyword', () => {
+    expect(extractTablesFromRawSql('SELECT * FROM "my table" WHERE id = 1').tables).toEqual([]);
+  });
+
+  it('does not fabricate tables from keyword-named quoted identifiers', () => {
+    expect(extractTablesFromRawSql('SELECT "join" x FROM t').tables).toEqual(['t']);
+    expect(extractTablesFromRawSql('SELECT "update", "from" FROM t').tables).toEqual(['t']);
+  });
+
+  it('excludes quoted CTE aliases', () => {
+    expect(
+      extractTablesFromRawSql('WITH "agg" AS (SELECT * FROM raw_events) SELECT * FROM "agg"')
+        .tables,
+    ).toEqual(['raw_events']);
+  });
+
+  it('extracts TRUNCATE targets', () => {
+    expect(extractTablesFromRawSql('TRUNCATE TABLE users').tables).toEqual(['users']);
+    expect(extractTablesFromRawSql('TRUNCATE users').tables).toEqual(['users']);
+    expect(extractTablesFromRawSql('TRUNCATE TABLE ONLY archive.users').tables).toEqual([
+      'archive.users',
+    ]);
+  });
+
+  it('does not fabricate TABLE/ONLY when a non-simple quoted name follows the anchor', () => {
+    // Regex backtracking out of the optional keyword groups must not turn
+    // the keyword itself into the captured table name.
+    expect(extractTablesFromRawSql('TRUNCATE TABLE "my table"').tables).toEqual([]);
+    expect(extractTablesFromRawSql('TRUNCATE TABLE ONLY "my table"').tables).toEqual([]);
+    expect(extractTablesFromRawSql('SELECT * FROM ONLY "my table" WHERE id = 1').tables).toEqual(
+      [],
+    );
+    expect(extractTablesFromRawSql('UPDATE ONLY "my table" SET x = 1').tables).toEqual([]);
+  });
+
+  it('still extracts tables literally named table or only-adjacent quoted names', () => {
+    expect(extractTablesFromRawSql('TRUNCATE "table"').tables).toEqual(['table']);
+    expect(extractTablesFromRawSql('TRUNCATE TABLE "orders"').tables).toEqual(['orders']);
+    expect(extractTablesFromRawSql('SELECT * FROM "table" WHERE id = 1').tables).toEqual(['table']);
+  });
+
+  it('does not emit a fragment of a bracket identifier containing ]] escapes', () => {
+    expect(extractTablesFromRawSql('SELECT * FROM [a]]b] WHERE x = 1').tables).toEqual([]);
+  });
 });

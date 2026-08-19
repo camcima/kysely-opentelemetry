@@ -1,6 +1,6 @@
 import type { Attributes, MeterProvider, TracerProvider } from '@opentelemetry/api';
 import type { QueryContext } from './analysis/analyze.js';
-import { warnLimited } from './otel/spans.js';
+import { warnLimited } from './otel/diagnostics.js';
 
 const DEFAULT_MAX_QUERY_TEXT_LENGTH = 4096;
 
@@ -87,6 +87,20 @@ export interface NormalizedOptions {
   readonly meterProvider?: MeterProvider;
 }
 
+/** An unrecognized mode (a plain-JS caller's typo, or a value plumbed from
+ *  env/JSON config) must degrade to the SAFE default, never fall through to
+ *  'parameterized' — that would silently emit raw SQL. */
+function normalizeQueryText(
+  value: KyselyOtelOptions['queryText'] | null,
+): NormalizedOptions['queryText'] {
+  // == null matches undefined AND null, preserving the pre-validation
+  // `?? 'sanitized'` semantics: an absent value is not a typo, so no warning.
+  if (value == null) return 'sanitized';
+  if (value === 'off' || value === 'sanitized' || value === 'parameterized') return value;
+  warnLimited('invalid queryText option; using "sanitized"', value);
+  return 'sanitized';
+}
+
 /** A negative value has surprising String.prototype.slice semantics (-1 keeps
  *  all but the last char) and Infinity removes the cap entirely — both defeat
  *  the intended bound, so invalid input falls back to the default loudly. */
@@ -107,7 +121,7 @@ export function normalizeOptions(options: KyselyOtelOptions = {}): NormalizedOpt
     ...(options.serverAddress !== undefined && { serverAddress: options.serverAddress }),
     ...(options.serverPort !== undefined && { serverPort: options.serverPort }),
     ...(options.poolName !== undefined && { poolName: options.poolName }),
-    queryText: options.queryText ?? 'sanitized',
+    queryText: normalizeQueryText(options.queryText),
     maxQueryTextLength: normalizeMaxQueryTextLength(options.maxQueryTextLength),
     fingerprint: options.fingerprint ?? true,
     summary: options.summary ?? true,
