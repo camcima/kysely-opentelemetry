@@ -98,6 +98,7 @@ export function extractTablesFromRawSql(sql: string): TableExtraction {
     }
     const name = match[1];
     if (!name || aliases.has(name.toLowerCase())) continue;
+    if (isBacktrackedKeyword(name, masked, regex.lastIndex)) continue;
     const seenDepth = seen.get(name);
     if (seenDepth === undefined) {
       seen.set(name, depth);
@@ -111,6 +112,21 @@ export function extractTablesFromRawSql(sql: string): TableExtraction {
   }
   const all = [...topLevel, ...nested];
   return { tables: all.slice(0, MAX_TABLES), truncated: all.length > MAX_TABLES };
+}
+
+/** On `TRUNCATE TABLE ?` / `FROM ONLY ?` (the `?` sentinel marks a
+ *  non-simple quoted name), the regex engine backtracks out of the optional
+ *  `(?:\s+table)?` / `(?:only\s+)?` group and captures the keyword itself as
+ *  the table name. A capture of exactly TABLE/ONLY whose next non-space
+ *  character is the sentinel is that artifact, never a real table. (A table
+ *  genuinely named `table`/`only` is followed by real SQL, not the
+ *  sentinel, and survives this check.) */
+function isBacktrackedKeyword(name: string, masked: string, index: number): boolean {
+  const lower = name.toLowerCase();
+  if (lower !== 'table' && lower !== 'only') return false;
+  let i = index;
+  while (i < masked.length && /\s/.test(masked[i]!)) i += 1;
+  return masked[i] === '?';
 }
 
 /** CTE alias names of a masked `WITH ...` query, lowercased; empty otherwise. */

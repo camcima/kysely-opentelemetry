@@ -90,8 +90,12 @@ export interface NormalizedOptions {
 /** An unrecognized mode (a plain-JS caller's typo, or a value plumbed from
  *  env/JSON config) must degrade to the SAFE default, never fall through to
  *  'parameterized' — that would silently emit raw SQL. */
-function normalizeQueryText(value: KyselyOtelOptions['queryText']): NormalizedOptions['queryText'] {
-  if (value === undefined) return 'sanitized';
+function normalizeQueryText(
+  value: KyselyOtelOptions['queryText'] | null,
+): NormalizedOptions['queryText'] {
+  // == null matches undefined AND null, preserving the pre-validation
+  // `?? 'sanitized'` semantics: an absent value is not a typo, so no warning.
+  if (value == null) return 'sanitized';
   if (value === 'off' || value === 'sanitized' || value === 'parameterized') return value;
   warnLimited('invalid queryText option; using "sanitized"', value);
   return 'sanitized';

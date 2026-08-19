@@ -163,4 +163,25 @@ describe('extractTablesFromRawSql', () => {
       'archive.users',
     ]);
   });
+
+  it('does not fabricate TABLE/ONLY when a non-simple quoted name follows the anchor', () => {
+    // Regex backtracking out of the optional keyword groups must not turn
+    // the keyword itself into the captured table name.
+    expect(extractTablesFromRawSql('TRUNCATE TABLE "my table"').tables).toEqual([]);
+    expect(extractTablesFromRawSql('TRUNCATE TABLE ONLY "my table"').tables).toEqual([]);
+    expect(extractTablesFromRawSql('SELECT * FROM ONLY "my table" WHERE id = 1').tables).toEqual(
+      [],
+    );
+    expect(extractTablesFromRawSql('UPDATE ONLY "my table" SET x = 1').tables).toEqual([]);
+  });
+
+  it('still extracts tables literally named table or only-adjacent quoted names', () => {
+    expect(extractTablesFromRawSql('TRUNCATE "table"').tables).toEqual(['table']);
+    expect(extractTablesFromRawSql('TRUNCATE TABLE "orders"').tables).toEqual(['orders']);
+    expect(extractTablesFromRawSql('SELECT * FROM "table" WHERE id = 1').tables).toEqual(['table']);
+  });
+
+  it('does not emit a fragment of a bracket identifier containing ]] escapes', () => {
+    expect(extractTablesFromRawSql('SELECT * FROM [a]]b] WHERE x = 1').tables).toEqual([]);
+  });
 });

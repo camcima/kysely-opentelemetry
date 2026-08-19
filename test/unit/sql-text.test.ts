@@ -106,7 +106,8 @@ describe('maskSqlText', () => {
  * identifier that holds one simple name is replaced by that bare name, so
  * `FROM "orders"` stays extractable. Anything else in an identifier region
  * (spaces, punctuation, or a table-clause keyword that could fabricate a
- * FROM/JOIN anchor) is blanked to a single space.
+ * FROM/JOIN anchor) is replaced by a `?` sentinel — deliberately NOT a
+ * space, so a scanner's \s+ can never bridge the gap to the next token.
  */
 describe('maskSqlTextUnquotingIdentifiers', () => {
   it('unquotes simple double-quoted, backtick, and bracket identifiers', () => {
@@ -153,6 +154,20 @@ describe('maskSqlTextUnquotingIdentifiers', () => {
     const out = maskSqlTextUnquotingIdentifiers('SELECT "a""b" FROM t');
     expect(out).not.toContain('a""b');
     expect(out).toContain('FROM t');
+  });
+
+  it('honors ]] escapes in bracket identifiers as one region (MSSQL)', () => {
+    const input = 'SELECT * FROM [a]]b] WHERE x = 1';
+    const masked = maskSqlText(input);
+    expect(masked).toHaveLength(input.length);
+    expect(masked).not.toContain('a]]b');
+    expect(masked).not.toContain('b]');
+    expect(masked.endsWith(' WHERE x = 1')).toBe(true);
+
+    const out = maskSqlTextUnquotingIdentifiers(input);
+    expect(out).not.toContain('a]b');
+    expect(out).not.toContain('b]');
+    expect(out).toContain('WHERE x = 1');
   });
 });
 

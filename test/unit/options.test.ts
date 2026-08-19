@@ -82,6 +82,13 @@ describe('queryText validation', () => {
     expect(normalizeOptions({ queryText: 'parameterized' }).queryText).toBe('parameterized');
   });
 
+  it('treats null like undefined: safe default, no warning (pre-validation ?? semantics)', () => {
+    const spy = vi.spyOn(diag, 'warn').mockImplementation(() => {});
+    expect(normalizeOptions({ queryText: null as never }).queryText).toBe('sanitized');
+    expect(spy).not.toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
   it('falls back to sanitized for an unrecognized value, warning through diag', () => {
     const spy = vi.spyOn(diag, 'warn').mockImplementation(() => {});
     // A plain-JS caller's typo must degrade to the SAFE mode, never to

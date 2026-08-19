@@ -79,7 +79,9 @@ function transformSql(sql: string, actionFor: (region: SqlRegion) => RegionActio
     } else if (ch === '`') {
       i = emitQuoted(sql, out, i, '`', false, actionFor('identifier'));
     } else if (ch === '[') {
-      const close = sql.indexOf(']', i + 1);
+      // MSSQL escapes ']' inside a bracket identifier by doubling it.
+      let close = sql.indexOf(']', i + 1);
+      while (close !== -1 && sql[close + 1] === ']') close = sql.indexOf(']', close + 2);
       i = emit(sql, out, i, close === -1 ? -1 : close + 1, actionFor('identifier'));
     } else if (ch === '$') {
       const tag = DOLLAR_TAG.exec(sql.slice(i))?.[0];
