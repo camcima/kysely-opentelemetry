@@ -12,5 +12,32 @@
   "hooks": {
     "before:init": ["pnpm run lint", "pnpm test"],
     "after:bump": ["pnpm run sync-version", "pnpm run build"]
+  },
+  "plugins": {
+    "@release-it/conventional-changelog": {
+      "infile": "CHANGELOG.md",
+      "header": "# Changelog",
+      "ignoreRecommendedBump": true,
+      "preset": {
+        "name": "conventionalcommits",
+        "types": [
+          { "type": "feat", "section": "Features" },
+          { "type": "fix", "section": "Bug Fixes" },
+          { "type": "perf", "section": "Performance" },
+          { "type": "revert", "section": "Reverts" },
+          { "type": "docs", "section": "Documentation", "effect": "changelog" },
+          {
+            "type": "refactor",
+            "section": "Refactoring",
+            "effect": "changelog"
+          },
+          { "type": "build", "effect": "hidden" },
+          { "type": "chore", "effect": "hidden" },
+          { "type": "ci", "effect": "hidden" },
+          { "type": "style", "effect": "hidden" },
+          { "type": "test", "effect": "hidden" }
+        ]
+      }
+    }
   }
 }
