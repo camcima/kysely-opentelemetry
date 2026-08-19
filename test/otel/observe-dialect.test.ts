@@ -10,7 +10,8 @@ import {
   SimpleSpanProcessor,
 } from '@opentelemetry/sdk-trace-base';
 import { Kysely, type CompiledQuery, type Dialect } from 'kysely';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { diag } from '@opentelemetry/api';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { observeDialect, ObservedDialect } from '../../src/index.js';
 import { createFakeDialect } from '../helpers/fake-dialect.js';
 import { setupOtel } from '../helpers/otel.js';
@@ -147,6 +148,20 @@ describe('observeDialect end-to-end', () => {
     const { dialect } = createFakeDialect();
     const once = observeDialect(dialect);
     expect(observeDialect(once)).toBe(once);
+  });
+
+  it('warns when re-wrapping discards options, stays silent when there are none', () => {
+    const spy = vi.spyOn(diag, 'warn').mockImplementation(() => {});
+    const { dialect } = createFakeDialect();
+    const once = observeDialect(dialect);
+
+    expect(observeDialect(once)).toBe(once);
+    expect(observeDialect(once, {})).toBe(once);
+    expect(spy).not.toHaveBeenCalled(); // idempotent re-wrap without options is fine
+
+    expect(observeDialect(once, { namespace: 'shop' })).toBe(once);
+    expect(spy.mock.calls.some(([msg]) => String(msg).includes('already-observed'))).toBe(true);
+    spy.mockRestore();
   });
 
   it('ObservedDialect is directly constructible with public options', async () => {

@@ -1,6 +1,7 @@
 import type { Attributes } from '@opentelemetry/api';
 import type { QueryContext } from '../analysis/analyze.js';
 import type { NormalizedOptions } from '../options.js';
+import { warnLimited } from './diagnostics.js';
 
 // Semconv attributes
 export const ATTR_DB_SYSTEM = 'db.system.name';
@@ -55,8 +56,10 @@ export function buildQueryAttributes(
   if (options.attributes) {
     try {
       Object.assign(attrs, options.attributes(ctx));
-    } catch {
-      // user hook failure must never break instrumentation
+    } catch (error) {
+      // user hook failure must never break instrumentation — but it must not
+      // be invisible either, or the missing attributes are undebuggable
+      warnLimited('attributes hook threw; custom attributes omitted', error);
     }
   }
   return attrs;

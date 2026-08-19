@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { diag } from '@opentelemetry/api';
+import { describe, expect, it, vi } from 'vitest';
 import { createAnalyzer } from '../../src/analysis/analyze.js';
 import { normalizeOptions } from '../../src/options.js';
 import { buildQueryAttributes } from '../../src/otel/attributes.js';
@@ -59,6 +60,17 @@ describe('buildQueryAttributes', () => {
       },
     });
     expect(throwing.attrs['db.operation.name']).toBe('SELECT'); // still built
+  });
+
+  it('warns through diag when the attributes hook throws (never fully silent)', () => {
+    const spy = vi.spyOn(diag, 'warn').mockImplementation(() => {});
+    attrsFor({
+      attributes: () => {
+        throw new Error('hook boom');
+      },
+    });
+    expect(spy.mock.calls.some(([msg]) => String(msg).includes('attributes hook'))).toBe(true);
+    spy.mockRestore();
   });
 
   it('emits connection-level attributes when configured, omits them by default', () => {

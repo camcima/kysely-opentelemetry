@@ -8,7 +8,8 @@ import {
   ATTR_SERVER_PORT,
   ATTR_TRANSACTION_OUTCOME,
 } from './otel/attributes.js';
-import { recordError, warnLimited } from './otel/spans.js';
+import { warnLimited } from './otel/diagnostics.js';
+import { recordError } from './otel/spans.js';
 
 export class ObservedDriver implements Driver {
   readonly #wrappers = new WeakMap<DatabaseConnection, ObservedConnection>();

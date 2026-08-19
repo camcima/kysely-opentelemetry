@@ -1,5 +1,5 @@
 import { MssqlAdapter, MysqlAdapter, PostgresAdapter, SqliteAdapter, type Dialect } from 'kysely';
-import { warnLimited } from './spans.js';
+import { warnLimited } from './diagnostics.js';
 
 const ADAPTER_NAME_TO_SYSTEM: Record<string, string> = {
   PostgresAdapter: 'postgresql',

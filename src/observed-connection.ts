@@ -19,7 +19,8 @@ import {
   buildQueryAttributes,
 } from './otel/attributes.js';
 import { recordDuration } from './otel/metrics.js';
-import { recordError, warnLimited } from './otel/spans.js';
+import { warnLimited } from './otel/diagnostics.js';
+import { recordError } from './otel/spans.js';
 
 export interface ObservedConnectionDeps {
   readonly options: NormalizedOptions;
@@ -266,7 +267,8 @@ export class ObservedConnection implements DatabaseConnection {
 function safeShouldObserve(filter: (ctx: QueryContext) => boolean, ctx: QueryContext): boolean {
   try {
     return filter(ctx);
-  } catch {
+  } catch (error) {
+    warnLimited('shouldObserve filter threw; observing the query (fail-open)', error);
     return true; // fail-open: a broken filter must not disable instrumentation
   }
 }

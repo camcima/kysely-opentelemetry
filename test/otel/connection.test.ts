@@ -1,6 +1,6 @@
-import { metrics, SpanKind, SpanStatusCode, trace } from '@opentelemetry/api';
+import { diag, metrics, SpanKind, SpanStatusCode, trace } from '@opentelemetry/api';
 import { CompiledQuery } from 'kysely';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createAnalyzer } from '../../src/analysis/analyze.js';
 import type { QueryContext } from '../../src/analysis/analyze.js';
 import { ObservedConnection } from '../../src/observed-connection.js';
@@ -225,6 +225,16 @@ describe('shouldObserve filter', () => {
     });
     await throwing.executeQuery(SELECT);
     expect(otel.spanExporter.getFinishedSpans()).toHaveLength(2); // still observed
+  });
+
+  it('warns through diag when the filter throws (fail-open must not be silent)', async () => {
+    const spy = vi.spyOn(diag, 'warn').mockImplementation(() => {});
+    const throwing = makeFiltered(() => {
+      throw new Error('broken filter');
+    });
+    await throwing.executeQuery(SELECT);
+    expect(spy.mock.calls.some(([msg]) => String(msg).includes('shouldObserve'))).toBe(true);
+    spy.mockRestore();
   });
 });
 
