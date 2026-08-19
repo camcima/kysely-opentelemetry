@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { maskSqlText, stripSqlComments } from '../../src/analysis/sql-text.js';
+import {
+  maskSqlText,
+  maskSqlTextUnquotingIdentifiers,
+  stripSqlComments,
+} from '../../src/analysis/sql-text.js';
 
 /**
  * maskSqlText replaces comments, string literals, and quoted identifiers with
@@ -93,6 +97,62 @@ describe('maskSqlText', () => {
     expect(masked).toHaveLength(input.length);
     expect(masked).not.toContain('never closed');
     expect(masked.startsWith('id = ')).toBe(true);
+  });
+});
+
+/**
+ * maskSqlTextUnquotingIdentifiers feeds the raw-SQL table scanner: comments
+ * and string literals are blanked exactly like maskSqlText, but a quoted
+ * identifier that holds one simple name is replaced by that bare name, so
+ * `FROM "orders"` stays extractable. Anything else in an identifier region
+ * (spaces, punctuation, or a table-clause keyword that could fabricate a
+ * FROM/JOIN anchor) is blanked to a single space.
+ */
+describe('maskSqlTextUnquotingIdentifiers', () => {
+  it('unquotes simple double-quoted, backtick, and bracket identifiers', () => {
+    expect(maskSqlTextUnquotingIdentifiers('SELECT * FROM "orders"')).toBe('SELECT * FROM orders');
+    expect(maskSqlTextUnquotingIdentifiers('SELECT * FROM `orders`')).toBe('SELECT * FROM orders');
+    expect(maskSqlTextUnquotingIdentifiers('SELECT * FROM [orders]')).toBe('SELECT * FROM orders');
+  });
+
+  it('keeps schema-qualified quoted names contiguous', () => {
+    expect(maskSqlTextUnquotingIdentifiers('SELECT * FROM "public"."orders"')).toBe(
+      'SELECT * FROM public.orders',
+    );
+  });
+
+  it('still blanks comments and string literals', () => {
+    const out = maskSqlTextUnquotingIdentifiers(
+      'SELECT "a" FROM t WHERE x = \'secret\' -- FROM fake',
+    );
+    expect(out).toContain('SELECT a FROM t');
+    expect(out).not.toContain('secret');
+    expect(out).not.toContain('fake');
+  });
+
+  it('blanks non-simple identifier content instead of emitting fragments', () => {
+    const out = maskSqlTextUnquotingIdentifiers('SELECT * FROM "my table" WHERE id = 1');
+    expect(out).not.toContain('my');
+    expect(out).not.toContain('table');
+    expect(out).toContain('WHERE id = 1');
+  });
+
+  it('blanks identifiers whose name is a table-clause keyword (no fabricated anchors)', () => {
+    const out = maskSqlTextUnquotingIdentifiers('SELECT "join" x FROM t');
+    expect(out).not.toMatch(/\bjoin\b/i);
+    expect(out).toContain('FROM t');
+  });
+
+  it('blanks an unterminated identifier to end of input (fail closed)', () => {
+    const out = maskSqlTextUnquotingIdentifiers('SELECT "unterminated FROM secrets');
+    expect(out).not.toContain('secrets');
+    expect(out.startsWith('SELECT ')).toBe(true);
+  });
+
+  it('blanks identifiers containing doubled-quote escapes (not a simple name)', () => {
+    const out = maskSqlTextUnquotingIdentifiers('SELECT "a""b" FROM t');
+    expect(out).not.toContain('a""b');
+    expect(out).toContain('FROM t');
   });
 });
 

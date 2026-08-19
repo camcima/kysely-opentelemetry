@@ -1,4 +1,4 @@
-import { maskSqlText } from './sql-text.js';
+import { maskSqlTextUnquotingIdentifiers } from './sql-text.js';
 
 export const MAX_TABLES = 20;
 
@@ -62,7 +62,7 @@ function walk(
 }
 
 const RAW_TABLE =
-  /\b(?:from|join|into|update)\s+(?:only\s+)?([A-Za-z_][\w$]*(?:\.[A-Za-z_][\w$]*)?)/gi;
+  /\b(?:from|join|into|update|truncate(?:\s+table)?)\s+(?:only\s+)?([A-Za-z_][\w$]*(?:\.[A-Za-z_][\w$]*)?)/gi;
 
 /** `alias AS (` / `alias (cols) AS [NOT] [MATERIALIZED] (` — a CTE definition. */
 const CTE_ALIAS =
@@ -70,14 +70,18 @@ const CTE_ALIAS =
 
 /**
  * Best-effort extraction for RawNode queries, on masked SQL so table-like
- * words inside comments and string literals are never matched. CTE aliases
- * are excluded (they are not real tables), and tables referenced by the main
- * statement (paren-depth 0) are ordered before tables that only appear
- * inside CTE bodies/subqueries — so `primaryTable`/`db.collection.name`
- * agrees with the operation verb for `WITH ... INSERT INTO target ...`.
+ * words inside comments and string literals are never matched. Quoted
+ * identifiers holding one simple name are unquoted first, so `FROM "orders"`
+ * extracts `orders` instead of blanking the name (and instead of the scanner
+ * skipping the blank and misreading the next keyword as a table). CTE
+ * aliases are excluded (they are not real tables), and tables referenced by
+ * the main statement (paren-depth 0) are ordered before tables that only
+ * appear inside CTE bodies/subqueries — so `primaryTable`/
+ * `db.collection.name` agrees with the operation verb for
+ * `WITH ... INSERT INTO target ...`.
  */
 export function extractTablesFromRawSql(sql: string): TableExtraction {
-  const masked = maskSqlText(sql);
+  const masked = maskSqlTextUnquotingIdentifiers(sql);
   const aliases = collectCteAliases(masked);
   const topLevel: string[] = [];
   const nested: string[] = [];
