@@ -1,5 +1,5 @@
-import { metrics, trace } from '@opentelemetry/api';
-import { describe, expect, it } from 'vitest';
+import { diag, metrics, trace } from '@opentelemetry/api';
+import { describe, expect, it, vi } from 'vitest';
 import { normalizeOptions } from '../../src/options.js';
 
 describe('normalizeOptions', () => {
@@ -72,6 +72,24 @@ describe('normalizeOptions', () => {
     const opts = normalizeOptions({ tracerProvider, meterProvider });
     expect(opts.tracerProvider).toBe(tracerProvider);
     expect(opts.meterProvider).toBe(meterProvider);
+  });
+});
+
+describe('queryText validation', () => {
+  it('accepts the three valid modes', () => {
+    expect(normalizeOptions({ queryText: 'off' }).queryText).toBe('off');
+    expect(normalizeOptions({ queryText: 'sanitized' }).queryText).toBe('sanitized');
+    expect(normalizeOptions({ queryText: 'parameterized' }).queryText).toBe('parameterized');
+  });
+
+  it('falls back to sanitized for an unrecognized value, warning through diag', () => {
+    const spy = vi.spyOn(diag, 'warn').mockImplementation(() => {});
+    // A plain-JS caller's typo must degrade to the SAFE mode, never to
+    // parameterized (which would emit raw SQL).
+    expect(normalizeOptions({ queryText: 'sanitised' as never }).queryText).toBe('sanitized');
+    expect(normalizeOptions({ queryText: 'full' as never }).queryText).toBe('sanitized');
+    expect(spy.mock.calls.some(([msg]) => String(msg).includes('queryText'))).toBe(true);
+    spy.mockRestore();
   });
 });
 
