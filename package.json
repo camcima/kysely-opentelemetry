@@ -82,10 +82,10 @@
     "@testcontainers/mssqlserver": "^12.0.4",
     "@testcontainers/mysql": "^12.0.4",
     "@testcontainers/postgresql": "^12.0.4",
-    "@types/better-sqlite3": "^7.6.13",
+    "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^26.1.2",
     "@types/pg": "^8.20.0",
-    "@vitest/coverage-v8": "^4.1.10",
+    "@vitest/coverage-v8": "^5.0.0",
     "better-sqlite3": "^13.0.1",
     "eslint": "^10.8.0",
     "eslint-config-prettier": "^10.1.8",
@@ -101,7 +101,7 @@
     "tsup": "^8.5.1",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.65.0",
-    "vitest": "^4.1.10"
+    "vitest": "^5.0.0"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
