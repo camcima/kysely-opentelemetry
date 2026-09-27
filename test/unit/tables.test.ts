@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { sql } from 'kysely';
 import { extractTables, extractTablesFromRawSql } from '../../src/analysis/tables.js';
-import { compile } from '../helpers/compile.js';
+import { compile, db } from '../helpers/compile.js';
 
 describe('extractTables', () => {
   it('extracts the FROM table', () => {
@@ -58,6 +59,53 @@ describe('extractTables', () => {
     const cq = compile((db) => db.selectFrom('orders').selectAll());
     expect(extractTables(cq.query).truncated).toBe(false);
     expect(extractTablesFromRawSql('SELECT * FROM orders').truncated).toBe(false);
+  });
+});
+
+describe('extractTables: bound values are opaque', () => {
+  // Bound parameter values live inside the operation-node tree (insert rows
+  // in PrimitiveValueListNode.values, where/sql-template values in
+  // ValueNode.value). They are application data, never query structure.
+  const tableShaped = { kind: 'TableNode', table: { identifier: { name: 'private@example.com' } } };
+
+  it('ignores a table-shaped object in an insert row', () => {
+    const cq = compile((k) => k.insertInto('events').values({ payload: tableShaped }));
+    expect(extractTables(cq.query).tables).toEqual(['events']);
+  });
+
+  it('ignores a table-shaped object in a where value', () => {
+    const cq = compile((k) =>
+      k.selectFrom('events').selectAll().where('payload', '=', tableShaped),
+    );
+    expect(extractTables(cq.query).tables).toEqual(['events']);
+  });
+
+  it('ignores a table-shaped object in a sql template value but keeps sql.table()', () => {
+    const cq = sql`select * from ${sql.table('events')} where payload = ${tableShaped}`.compile(db);
+    expect(extractTables(cq.query).tables).toEqual(['events']);
+  });
+
+  it('still walks subqueries inside insert values', () => {
+    const cq = compile((k) =>
+      k.insertInto('events').values({
+        user_id: k.selectFrom('users').select('id').limit(1),
+      }),
+    );
+    expect(extractTables(cq.query).tables).toEqual(['events', 'users']);
+  });
+
+  it('never reads properties of a bound value (getters, buffers, cycles)', () => {
+    let reads = 0;
+    const payload: Record<string, unknown> = {
+      get secret() {
+        reads += 1;
+        return 'x';
+      },
+    };
+    payload['self'] = payload;
+    const cq = compile((k) => k.insertInto('events').values({ payload, data: Buffer.alloc(1024) }));
+    expect(extractTables(cq.query).tables).toEqual(['events']);
+    expect(reads).toBe(0);
   });
 });
 

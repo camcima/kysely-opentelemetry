@@ -64,6 +64,27 @@ describe('observeDialect end-to-end', () => {
     }
   });
 
+  it('NO-PII: table-shaped bound values never reach span names, attributes, metrics, or the cache', async () => {
+    const { db } = makeDb();
+    const marker = 'private@example.com';
+    const payload = { kind: 'TableNode', table: { identifier: { name: marker } } };
+    await db.insertInto('events').values({ payload }).execute();
+    // Same SQL, harmless payload: a cache hit must not replay the first payload.
+    await db
+      .insertInto('events')
+      .values({ payload: { ok: true } })
+      .execute();
+
+    const spans = otel.spanExporter.getFinishedSpans();
+    expect(spans).toHaveLength(2);
+    for (const span of spans) {
+      expect(span.name).toBe('INSERT events');
+      expect(JSON.stringify(span.attributes) + JSON.stringify(span.events)).not.toContain(marker);
+    }
+    const metric = await otel.findMetric('db.client.operation.duration');
+    expect(JSON.stringify(metric!.dataPoints.map((p) => p.attributes))).not.toContain(marker);
+  });
+
   it('transaction produces nested spans through the Kysely transaction API', async () => {
     const { db } = makeDb();
     await db.transaction().execute(async (trx) => {
