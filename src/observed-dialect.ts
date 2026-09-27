@@ -8,6 +8,7 @@ import type {
   QueryCompiler,
 } from 'kysely';
 import { createAnalyzer } from './analysis/analyze.js';
+import { lexiconFor } from './analysis/lexicon.js';
 import { ObservedDriver } from './observed-driver.js';
 import type { ObservedConnectionDeps } from './observed-connection.js';
 import { normalizeOptions, type KyselyOtelOptions, type NormalizedOptions } from './options.js';
@@ -53,7 +54,7 @@ export class ObservedDialect implements Dialect {
     const dbSystem = this.options.dbSystem ?? detectDbSystem(this.inner);
     const deps: ObservedConnectionDeps = {
       options: this.options,
-      analyze: createAnalyzer(this.options),
+      analyze: createAnalyzer(this.options, lexiconFor(dbSystem)),
       tracer: tracerProvider.getTracer('kysely-opentelemetry', VERSION),
       ...(this.options.metrics.operationDuration && {
         histogram: createDurationHistogram(meter),

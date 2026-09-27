@@ -1,3 +1,4 @@
+import { LEXICONS, type SqlLexicon } from './lexicon.js';
 import { maskSqlTextUnquotingIdentifiers } from './sql-text.js';
 
 export const MAX_TABLES = 20;
@@ -91,8 +92,11 @@ const CTE_ALIAS =
  * `db.collection.name` agrees with the operation verb for
  * `WITH ... INSERT INTO target ...`.
  */
-export function extractTablesFromRawSql(sql: string): TableExtraction {
-  const masked = maskSqlTextUnquotingIdentifiers(sql);
+export function extractTablesFromRawSql(
+  sql: string,
+  lexicon: SqlLexicon = LEXICONS.unknown,
+): TableExtraction {
+  const masked = maskSqlTextUnquotingIdentifiers(sql, lexicon);
   const aliases = collectCteAliases(masked);
   const topLevel: string[] = [];
   const nested: string[] = [];
