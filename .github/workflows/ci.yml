@@ -100,6 +100,6 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v7
-      - uses: google/osv-scanner-action/osv-scanner-action@v2.5.0
+      - uses: google/osv-scanner-action/osv-scanner-action@v2.6.0
         with:
           scan-args: --recursive .
