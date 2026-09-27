@@ -153,6 +153,65 @@ describe('ObservedConnection.streamQuery', () => {
     expect(otel.spanExporter.getFinishedSpans()).toHaveLength(1);
   });
 
+  /** An inner stream whose cleanup (like pg's cursor.close() in a finally)
+   *  takes time and reports what it observed. */
+  function withSlowCleanup(inner: FakeConnection, cleanup: () => void = () => {}) {
+    const seen = { finishedSpans: -1, activeSpanId: undefined as string | undefined };
+    (inner as any).streamQuery = async function* () {
+      try {
+        yield { rows: [{ id: 1 }] };
+        yield { rows: [{ id: 2 }] };
+      } finally {
+        await new Promise((r) => setTimeout(r, 25));
+        seen.finishedSpans = otel.spanExporter.getFinishedSpans().length;
+        seen.activeSpanId = trace.getActiveSpan()?.spanContext().spanId;
+        cleanup();
+      }
+    };
+    return seen;
+  }
+
+  it('early break: ends the span after inner cleanup, which runs in the query context (R5)', async () => {
+    const { connection, inner } = makeConnection();
+    const seen = withSlowCleanup(inner);
+    for await (const _ of connection.streamQuery(SELECT, 1)) {
+      break;
+    }
+    const [span] = otel.spanExporter.getFinishedSpans();
+    expect(seen.finishedSpans).toBe(0); // span still open while the cursor closes
+    expect(seen.activeSpanId).toBe(span!.spanContext().spanId);
+    const [secs, nanos] = span!.duration;
+    expect(secs * 1000 + nanos / 1e6).toBeGreaterThanOrEqual(20); // includes cleanup
+    expect(span!.status.code).not.toBe(SpanStatusCode.ERROR);
+  });
+
+  it('early break: a failing cleanup rejects with its own error and marks the span (R5)', async () => {
+    const closeError = new Error('cursor close failed');
+    const { connection, inner } = makeConnection();
+    withSlowCleanup(inner, () => {
+      throw closeError;
+    });
+    const iterator = connection.streamQuery(SELECT, 1);
+    await iterator.next();
+    await expect(iterator.return!()).rejects.toBe(closeError);
+    const [span] = otel.spanExporter.getFinishedSpans();
+    expect(span!.status.code).toBe(SpanStatusCode.ERROR);
+    expect(span!.status.message).toBe('cursor close failed');
+  });
+
+  it('throw(): ends the span after inner cleanup, with the injected error (R5)', async () => {
+    const reason = new Error('consumer aborted');
+    const { connection, inner } = makeConnection();
+    const seen = withSlowCleanup(inner);
+    const iterator = connection.streamQuery(SELECT, 1);
+    await iterator.next();
+    await expect(iterator.throw!(reason)).rejects.toBe(reason);
+    const [span] = otel.spanExporter.getFinishedSpans();
+    expect(seen.finishedSpans).toBe(0);
+    expect(seen.activeSpanId).toBe(span!.spanContext().spanId);
+    expect(span!.status.message).toBe('consumer aborted');
+  });
+
   it('throw() without an argument raises a real Error, not undefined', async () => {
     const { connection } = makeConnection(() => ({ rows: [{ id: 1 }, { id: 2 }] }));
     const iterator = connection.streamQuery(SELECT, 1);
