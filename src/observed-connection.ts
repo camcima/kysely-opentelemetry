@@ -171,16 +171,33 @@ export class ObservedConnection implements DatabaseConnection {
           throw error;
         }
       },
+      // return()/throw() run the inner iterator's cleanup (e.g. pg's
+      // cursor.close() in a finally) — part of the operation the caller
+      // observes. So cleanup runs under the query span's context, and the
+      // span ends only after it settles, recording a cleanup failure.
       async return(value?: unknown): Promise<IteratorResult<QueryResult<R>>> {
-        endSpan();
-        if (inner.return) return inner.return(value);
-        return { done: true, value: undefined };
+        try {
+          const result = inner.return
+            ? await context.with(spanContext, () => inner.return!(value))
+            : { done: true as const, value: undefined };
+          endSpan();
+          return result;
+        } catch (cleanupError) {
+          endSpan(cleanupError);
+          throw cleanupError;
+        }
       },
       async throw(error?: unknown): Promise<IteratorResult<QueryResult<R>>> {
         const reason = error ?? new Error('stream aborted');
-        endSpan(reason);
-        if (inner.throw) return inner.throw(reason);
-        throw reason;
+        try {
+          if (!inner.throw) throw reason;
+          const result = await context.with(spanContext, () => inner.throw!(reason));
+          endSpan(reason);
+          return result;
+        } catch (thrown) {
+          endSpan(thrown);
+          throw thrown;
+        }
       },
     };
   }
