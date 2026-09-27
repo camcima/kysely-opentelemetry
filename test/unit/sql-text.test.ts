@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import { LEXICONS } from '../../src/analysis/lexicon.js';
 import {
   maskSqlText,
   maskSqlTextUnquotingIdentifiers,
-  stripSqlComments,
+  scrubSqlText,
 } from '../../src/analysis/sql-text.js';
 
 /**
@@ -64,7 +65,7 @@ describe('maskSqlText', () => {
 
   it("honors backslash escapes in single-quoted strings so \\' does not terminate (MySQL)", () => {
     const input = "id = 'a\\'b' next";
-    const masked = maskSqlText(input);
+    const masked = maskSqlText(input, LEXICONS.mysql);
     expect(masked).toHaveLength(input.length);
     expect(masked).not.toContain('a');
     expect(masked).not.toContain('b');
@@ -171,51 +172,135 @@ describe('maskSqlTextUnquotingIdentifiers', () => {
   });
 });
 
-describe('stripSqlComments', () => {
-  it('blanks line comments but preserves the rest verbatim', () => {
-    const out = stripSqlComments('SELECT 1 -- email=alice@example.com\nFROM t');
+describe('scrubSqlText', () => {
+  it('blanks line comments but preserves code', () => {
+    const out = scrubSqlText('SELECT 1 -- email=alice@example.com\nFROM t');
     expect(out).not.toContain('alice@example.com');
     expect(out.replace(/\s+/g, ' ').trim()).toBe('SELECT 1 FROM t');
-    expect(out).toHaveLength('SELECT 1 -- email=alice@example.com\nFROM t'.length);
   });
 
   it('blanks block comments', () => {
-    const out = stripSqlComments('SELECT 1 /* trace=abc123 */ FROM t');
+    const out = scrubSqlText('SELECT 1 /* trace=abc123 */ FROM t');
     expect(out).not.toContain('abc123');
     expect(out.replace(/\s+/g, ' ').trim()).toBe('SELECT 1 FROM t');
   });
 
-  it('preserves string literals verbatim, including comment markers inside them', () => {
-    expect(stripSqlComments("SELECT '--not a comment' FROM t")).toBe(
-      "SELECT '--not a comment' FROM t",
-    );
-    expect(stripSqlComments("SELECT '/* keep */' FROM t")).toBe("SELECT '/* keep */' FROM t");
+  it('replaces string literals with ?, including comment markers inside them', () => {
+    expect(scrubSqlText("SELECT '--not a comment' FROM t")).toBe('SELECT ? FROM t');
+    expect(scrubSqlText("SELECT '/* keep */' FROM t")).toBe('SELECT ? FROM t');
+    expect(scrubSqlText('SELECT $tag$ -- inside $tag$ FROM t')).toBe('SELECT ? FROM t');
   });
 
-  it('preserves quoted identifiers and dollar-quoted strings verbatim', () => {
-    expect(stripSqlComments('SELECT "a--b", `c--d`, [e--f] FROM t')).toBe(
+  it('preserves quoted identifiers verbatim', () => {
+    expect(scrubSqlText('SELECT "a--b", `c--d`, [e--f] FROM t')).toBe(
       'SELECT "a--b", `c--d`, [e--f] FROM t',
-    );
-    expect(stripSqlComments('SELECT $tag$ -- inside $tag$ FROM t')).toBe(
-      'SELECT $tag$ -- inside $tag$ FROM t',
     );
   });
 
   it('blanks an unterminated block comment to end of input', () => {
-    const out = stripSqlComments('SELECT 1 /* oops');
-    expect(out.trimEnd()).toBe('SELECT 1');
-    expect(out).toHaveLength('SELECT 1 /* oops'.length);
+    expect(scrubSqlText('SELECT 1 /* oops').trimEnd()).toBe('SELECT 1');
   });
 
   it('blanks an unterminated dollar-quote to end of input (fail closed)', () => {
-    const out = stripSqlComments('SELECT 1 WHERE x = $foo$ -- email=alice@example.com');
+    const out = scrubSqlText('SELECT 1 WHERE x = $foo$ -- email=alice@example.com');
     expect(out).not.toContain('alice@example.com');
     expect(out.trimEnd()).toBe('SELECT 1 WHERE x =');
   });
 
   it('blanks an unterminated string literal to end of input (fail closed)', () => {
-    const out = stripSqlComments("SELECT 'abc -- pwd=hunter2");
+    const out = scrubSqlText("SELECT 'abc -- pwd=hunter2");
     expect(out).not.toContain('hunter2');
     expect(out.trimEnd()).toBe('SELECT');
+  });
+});
+
+/**
+ * String and comment syntax differs per database. A scanner using the wrong
+ * rules misplaces a literal's end and exposes the NEXT literal's contents as
+ * code (review findings R2/R3), so each dialect gets explicit rules and an
+ * unknown dialect fails closed.
+ */
+describe('dialect lexicons', () => {
+  const secret = 'private@example.com';
+  const norm = (s: string) => s.replace(/\s+/g, ' ').trim();
+
+  it("postgres: a backslash in an ordinary string is literal ('C:\\' is complete)", () => {
+    const out = scrubSqlText(`WHERE path = 'C:\\' AND name = '${secret}'`, LEXICONS.postgresql);
+    expect(out).toBe('WHERE path = ? AND name = ?');
+  });
+
+  it("postgres: E'' strings honor backslash escapes, and the E prefix is consumed", () => {
+    const out = scrubSqlText(
+      `WHERE a = E'it\\'s' AND b = e'x\\'' AND c = '${secret}'`,
+      LEXICONS.postgresql,
+    );
+    expect(out).toBe('WHERE a = ? AND b = ? AND c = ?');
+  });
+
+  it("postgres: an identifier ending in e before a quote is not an E'' prefix", () => {
+    const out = scrubSqlText(`WHERE d = date'C:\\' AND name = '${secret}'`, LEXICONS.postgresql);
+    expect(out).toBe('WHERE d = date? AND name = ?');
+  });
+
+  it('mysql: backslash escapes a quote in every single-quoted string', () => {
+    const out = scrubSqlText(`WHERE a = 'it\\'s' AND b = '${secret}'`, LEXICONS.mysql);
+    expect(out).toBe('WHERE a = ? AND b = ?');
+  });
+
+  it('sqlite and mssql: a backslash is always literal', () => {
+    for (const lexicon of [LEXICONS.sqlite, LEXICONS.mssql]) {
+      const out = scrubSqlText(`WHERE path = 'C:\\' AND name = '${secret}'`, lexicon);
+      expect(out).toBe('WHERE path = ? AND name = ?');
+    }
+  });
+
+  it('unknown: a backslash inside a string blanks to end of input (fail closed)', () => {
+    // Either reading could be right, so nothing after the ambiguous literal survives.
+    const pg = scrubSqlText(`WHERE path = 'C:\\' AND name = '${secret}'`, LEXICONS.unknown);
+    expect(norm(pg)).toBe('WHERE path =');
+    const my = scrubSqlText(`WHERE a = 'it\\'s' AND b = '${secret}'`, LEXICONS.unknown);
+    expect(norm(my)).toBe('WHERE a =');
+    // A backslash-free literal is unambiguous and scrubs normally.
+    expect(scrubSqlText("WHERE a = 'x' AND b = 1", LEXICONS.unknown)).toBe('WHERE a = ? AND b = 1');
+  });
+
+  it('defaults to the unknown lexicon when none is given', () => {
+    expect(maskSqlText(`x = 'a\\' y = '${secret}'`)).not.toContain(secret);
+    expect(scrubSqlText(`x = 'a\\' y = '${secret}'`).trim()).toBe('x =');
+  });
+
+  it('postgres, mssql and unknown: block comments nest', () => {
+    for (const lexicon of [LEXICONS.postgresql, LEXICONS.mssql, LEXICONS.unknown]) {
+      const out = scrubSqlText(`SELECT 1 /* a /* b */ ${secret} */ FROM t`, lexicon);
+      expect(norm(out)).toBe('SELECT 1 FROM t');
+    }
+  });
+
+  it('mysql and sqlite: block comments do not nest', () => {
+    for (const lexicon of [LEXICONS.mysql, LEXICONS.sqlite]) {
+      const out = scrubSqlText('SELECT 1 /* a /* b */ FROM t', lexicon);
+      expect(norm(out)).toBe('SELECT 1 FROM t');
+    }
+  });
+
+  it('mysql and unknown: # starts a line comment', () => {
+    for (const lexicon of [LEXICONS.mysql, LEXICONS.unknown]) {
+      const out = scrubSqlText(`SELECT 1 # ${secret}\nFROM t`, lexicon);
+      expect(norm(out)).toBe('SELECT 1 FROM t');
+    }
+  });
+
+  it('postgres, sqlite and mssql: # is not a comment', () => {
+    for (const lexicon of [LEXICONS.postgresql, LEXICONS.sqlite, LEXICONS.mssql]) {
+      expect(scrubSqlText('SELECT a # b FROM #tmp', lexicon)).toBe('SELECT a # b FROM #tmp');
+    }
+  });
+
+  it('applies the lexicon to masking and identifier unquoting too', () => {
+    const sql = `SELECT 1 /* a /* b */ ${secret} */ FROM t WHERE p = 'C:\\' AND n = '${secret}'`;
+    expect(maskSqlText(sql, LEXICONS.postgresql)).not.toContain(secret);
+    expect(maskSqlText(sql, LEXICONS.postgresql)).toContain('WHERE p =');
+    expect(maskSqlTextUnquotingIdentifiers(sql, LEXICONS.postgresql)).not.toContain(secret);
+    expect(maskSqlTextUnquotingIdentifiers(sql, LEXICONS.postgresql)).toContain('AND n =');
   });
 });

@@ -1,4 +1,5 @@
 import type { RootOperationNode } from 'kysely';
+import { LEXICONS, type SqlLexicon } from './lexicon.js';
 import { maskSqlText } from './sql-text.js';
 
 // Includes underscores/digits so an identifier-led raw statement (e.g. a
@@ -12,9 +13,13 @@ const MAIN_VERBS = new Set(['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'MERGE']);
  * RawNode → first keyword of the SQL text (comments masked out), or 'SQL'
  * when none.
  */
-export function operationName(node: RootOperationNode, sql: string): string {
+export function operationName(
+  node: RootOperationNode,
+  sql: string,
+  lexicon: SqlLexicon = LEXICONS.unknown,
+): string {
   if (node.kind === 'RawNode') {
-    const masked = maskSqlText(sql);
+    const masked = maskSqlText(sql, lexicon);
     const keyword = FIRST_KEYWORD.exec(masked)?.[0]?.toUpperCase();
     if (!keyword) return 'SQL';
     return keyword === 'WITH' ? mainVerbAfterCte(masked) : keyword;

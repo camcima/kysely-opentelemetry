@@ -2,6 +2,7 @@ import type { CompiledQuery } from 'kysely';
 import type { NormalizedOptions } from '../options.js';
 import { fingerprintSql } from './fingerprint.js';
 import { hashFingerprint } from './hash.js';
+import { LEXICONS, type SqlLexicon } from './lexicon.js';
 import { LruCache } from './lru.js';
 import { operationName } from './operation.js';
 import { summarize } from './summary.js';
@@ -54,9 +55,14 @@ function analysisBytes(key: string, a: QueryAnalysis): number {
  * (everything except per-call parameters) in a bounded LRU keyed by the
  * query kind plus compiled sql. Identical query shapes with different bind
  * values hit the cache and only pay for re-attaching `parameters`; SQL over
- * MAX_CACHED_SQL_LENGTH is analyzed but not cached, to bound memory.
+ * MAX_CACHED_SQL_LENGTH is analyzed but not cached, to bound memory. The
+ * lexicon (string/comment syntax of the target database) is fixed per
+ * analyzer, so it never needs to be part of the cache key.
  */
-export function createAnalyzer(options: NormalizedOptions): Analyzer {
+export function createAnalyzer(
+  options: NormalizedOptions,
+  lexicon: SqlLexicon = LEXICONS.unknown,
+): Analyzer {
   const cache = new LruCache<string, QueryAnalysis>(CACHE_SIZE, {
     maxBytes: CACHE_MAX_BYTES,
     sizeOf: analysisBytes,
@@ -67,20 +73,24 @@ export function createAnalyzer(options: NormalizedOptions): Analyzer {
     const key = `${compiledQuery.query.kind}\0${compiledQuery.sql}`;
     let analysis = cache.get(key);
     if (!analysis) {
-      analysis = analyzeSql(compiledQuery, options);
+      analysis = analyzeSql(compiledQuery, options, lexicon);
       if (compiledQuery.sql.length <= MAX_CACHED_SQL_LENGTH) cache.set(key, analysis);
     }
     return { ...analysis, sql: compiledQuery.sql, parameters: compiledQuery.parameters };
   };
 }
 
-function analyzeSql(compiledQuery: CompiledQuery, options: NormalizedOptions): QueryAnalysis {
+function analyzeSql(
+  compiledQuery: CompiledQuery,
+  options: NormalizedOptions,
+  lexicon: SqlLexicon,
+): QueryAnalysis {
   const { sql, query } = compiledQuery;
   const isRaw = query.kind === 'RawNode';
-  const operation = operationName(query, sql);
+  const operation = operationName(query, sql, lexicon);
   const extraction = options.tables
     ? isRaw
-      ? extractTablesFromRawSql(sql)
+      ? extractTablesFromRawSql(sql, lexicon)
       : extractTables(query)
     : { tables: [], truncated: false };
   const { tables } = extraction;
@@ -94,7 +104,7 @@ function analyzeSql(compiledQuery: CompiledQuery, options: NormalizedOptions): Q
   let sanitizationError = false;
   if (options.fingerprint || options.hash || options.queryText === 'sanitized') {
     try {
-      const full = fingerprintSql(sql);
+      const full = fingerprintSql(sql, lexicon);
       // Hash the UNtruncated fingerprint: truncating first would collide two
       // distinct queries that share a prefix under a small maxQueryTextLength.
       if (options.hash) hash = hashFingerprint(full);

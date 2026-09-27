@@ -1,3 +1,5 @@
+import { LEXICONS, type SqlLexicon } from './lexicon.js';
+
 /**
  * Replaces SQL comments, string literals, and quoted identifiers with spaces,
  * preserving length and the position of every unmasked character, so
@@ -5,16 +7,18 @@
  * tracking) can run plain regexes over the result without being fooled by
  * quoted or commented content.
  *
- * Masked constructs: `-- line` comments, slash-star block comments
- * (non-nested), `'...'` string literals (`''` doubling and `\'` escapes),
- * `"..."` and
- * `` `...` `` quoted identifiers, `[...]` bracket identifiers, and
- * `$tag$...$tag$` dollar-quoted strings. An unterminated construct is always
- * blanked to the end of the input — conservative and fail-closed: better to
- * see less than to misread (or leak) whatever follows.
+ * Masked constructs: `-- line` comments, slash-star block comments, `'...'`
+ * string literals (`''` doubling), `"..."` and `` `...` `` quoted
+ * identifiers, `[...]` bracket identifiers, and `$tag$...$tag$`
+ * dollar-quoted strings. Syntax that differs per database — backslash
+ * escapes in strings, Postgres `E'...'` strings, nested block comments, and
+ * MySQL `#` comments — follows the given SqlLexicon; the default is the
+ * fail-closed unknown lexicon. An unterminated construct is always blanked to
+ * the end of the input — conservative and fail-closed: better to see less
+ * than to misread (or leak) whatever follows.
  *
- * `stripSqlComments` shares the same scanner but blanks only comments,
- * leaving all *terminated* quoted content and code verbatim.
+ * `scrubSqlText` shares the same scanner but blanks only comments, replaces
+ * each string literal with `?`, and keeps identifiers and code verbatim.
  * `maskSqlTextUnquotingIdentifiers` blanks comments and strings but replaces
  * a quoted identifier holding one simple name with that bare name (dropping
  * the quotes), so the raw-SQL table scanner can see `FROM "orders"`; it does
@@ -34,20 +38,28 @@ const TABLE_CLAUSE_KEYWORDS = new Set(['from', 'join', 'into', 'update', 'only',
 
 type SqlRegion = 'comment' | 'string' | 'identifier';
 
-type RegionAction = 'blank' | 'keep' | 'unquote';
+type RegionAction = 'blank' | 'keep' | 'unquote' | 'placeholder';
 
-export function maskSqlText(sql: string): string {
-  return transformSql(sql, () => 'blank');
+/** How a backslash inside one quoted region behaves (see SqlLexicon). */
+type BackslashMode = 'escape' | 'literal' | 'ambiguous';
+
+const WORD_CHAR = /[A-Za-z0-9_$]/;
+
+export function maskSqlText(sql: string, lexicon: SqlLexicon = LEXICONS.unknown): string {
+  return transformSql(sql, lexicon, () => 'blank');
 }
 
-/** Blanks only comments (to spaces, preserving length); terminated strings,
- *  quoted identifiers, and dollar-quoted regions pass through verbatim.
- *  Comment markers inside quoted regions are never treated as comments. An
- *  unterminated string, identifier, or dollar-quote is blanked to end of
- *  input (fail-closed), so any trailing content — including what looks like
- *  a comment — can never leak through. */
-export function stripSqlComments(sql: string): string {
-  return transformSql(sql, (region) => (region === 'comment' ? 'blank' : 'keep'));
+/** Blanks comments (to spaces) and replaces each terminated string literal —
+ *  including dollar-quoted and `E'...'` strings — with `?`; quoted
+ *  identifiers and code pass through verbatim. Comment markers inside quoted
+ *  regions are never treated as comments. An unterminated string,
+ *  identifier, or dollar-quote is blanked to end of input (fail-closed), so
+ *  any trailing content — including what looks like a comment — can never
+ *  leak through. */
+export function scrubSqlText(sql: string, lexicon: SqlLexicon = LEXICONS.unknown): string {
+  return transformSql(sql, lexicon, (region) =>
+    region === 'comment' ? 'blank' : region === 'string' ? 'placeholder' : 'keep',
+  );
 }
 
 /** Like maskSqlText, but a quoted identifier containing one simple,
@@ -57,11 +69,22 @@ export function stripSqlComments(sql: string): string {
  *  never bridge the gap to the next keyword). Output length is NOT
  *  preserved; callers must scan the transformed string only, never map
  *  positions back. */
-export function maskSqlTextUnquotingIdentifiers(sql: string): string {
-  return transformSql(sql, (region) => (region === 'identifier' ? 'unquote' : 'blank'));
+export function maskSqlTextUnquotingIdentifiers(
+  sql: string,
+  lexicon: SqlLexicon = LEXICONS.unknown,
+): string {
+  return transformSql(sql, lexicon, (region) => (region === 'identifier' ? 'unquote' : 'blank'));
 }
 
-function transformSql(sql: string, actionFor: (region: SqlRegion) => RegionAction): string {
+function transformSql(
+  sql: string,
+  lexicon: SqlLexicon,
+  actionFor: (region: SqlRegion) => RegionAction,
+): string {
+  const stringBackslash: BackslashMode =
+    lexicon.backslash === 'escape' || lexicon.backslash === 'ambiguous'
+      ? lexicon.backslash
+      : 'literal';
   const out: string[] = [];
   let i = 0;
   while (i < sql.length) {
@@ -69,15 +92,25 @@ function transformSql(sql: string, actionFor: (region: SqlRegion) => RegionActio
     const next = sql[i + 1];
     if (ch === '-' && next === '-') {
       i = emit(sql, out, i, sql.indexOf('\n', i + 2), actionFor('comment'));
+    } else if (ch === '#' && lexicon.hashComments) {
+      i = emit(sql, out, i, sql.indexOf('\n', i + 1), actionFor('comment'));
     } else if (ch === '/' && next === '*') {
-      const close = sql.indexOf('*/', i + 2);
-      i = emit(sql, out, i, close === -1 ? -1 : close + 2, actionFor('comment'));
+      const end = blockCommentEnd(sql, i, lexicon.nestedBlockComments);
+      i = emit(sql, out, i, end, actionFor('comment'));
     } else if (ch === "'") {
-      i = emitQuoted(sql, out, i, "'", true, actionFor('string'));
-    } else if (ch === '"') {
-      i = emitQuoted(sql, out, i, '"', false, actionFor('identifier'));
-    } else if (ch === '`') {
-      i = emitQuoted(sql, out, i, '`', false, actionFor('identifier'));
+      i = emitQuoted(sql, out, i, i, stringBackslash, actionFor('string'));
+    } else if (
+      (ch === 'E' || ch === 'e') &&
+      next === "'" &&
+      lexicon.backslash === 'e-strings' &&
+      !WORD_CHAR.test(sql[i - 1] ?? '')
+    ) {
+      // Postgres escape string: the E prefix belongs to the literal, and
+      // backslash escapes apply only here. `date'...'` is not one (the e
+      // ends an identifier), hence the word-boundary check.
+      i = emitQuoted(sql, out, i, i + 1, 'escape', actionFor('string'));
+    } else if (ch === '"' || ch === '`') {
+      i = emitQuoted(sql, out, i, i, 'literal', actionFor('identifier'));
     } else if (ch === '[') {
       // MSSQL escapes ']' inside a bracket identifier by doubling it.
       let close = sql.indexOf(']', i + 1);
@@ -100,6 +133,26 @@ function transformSql(sql: string, actionFor: (region: SqlRegion) => RegionActio
   return out.join('');
 }
 
+/** End (exclusive) of the block comment opening at `start`, or -1 when
+ *  unterminated. With nesting, each inner opener needs its own closer. */
+function blockCommentEnd(sql: string, start: number, nested: boolean): number {
+  let depth = 1;
+  let i = start + 2;
+  while (i < sql.length) {
+    if (sql[i] === '*' && sql[i + 1] === '/') {
+      depth -= 1;
+      i += 2;
+      if (depth === 0) return i;
+    } else if (nested && sql[i] === '/' && sql[i + 1] === '*') {
+      depth += 1;
+      i += 2;
+    } else {
+      i += 1;
+    }
+  }
+  return -1;
+}
+
 /** Emits [from, to) — or to end of input when `to` is -1 — according to
  *  `action`; returns the next scan position. An unterminated region
  *  (`to === -1`) is always blanked regardless of the action (fail closed) so
@@ -114,6 +167,8 @@ function emit(sql: string, out: string[], from: number, to: number, action: Regi
     for (let i = from; i < end; i += 1) out.push(' ');
   } else if (action === 'keep') {
     for (let i = from; i < end; i += 1) out.push(sql[i]!);
+  } else if (action === 'placeholder') {
+    out.push('?');
   } else {
     const content = sql.slice(from + 1, end - 1);
     if (SIMPLE_IDENTIFIER.test(content) && !TABLE_CLAUSE_KEYWORDS.has(content.toLowerCase())) {
@@ -128,20 +183,25 @@ function emit(sql: string, out: string[], from: number, to: number, action: Regi
   return end;
 }
 
-/** Scans a quoted region starting at `start` (which holds `quote`), honoring
- *  doubled-quote escapes and, for single quotes, backslash escapes. */
+/** Scans a quoted region whose opening quote is at `quoteAt` (the region
+ *  itself starts at `start`, earlier when a prefix like `E` belongs to it),
+ *  honoring doubled-quote escapes and the given backslash mode. An
+ *  `ambiguous` backslash means the literal's end cannot be placed safely, so
+ *  the rest of the input is treated as unterminated (blanked, fail closed). */
 function emitQuoted(
   sql: string,
   out: string[],
   start: number,
-  quote: string,
-  backslashEscapes: boolean,
+  quoteAt: number,
+  backslash: BackslashMode,
   action: RegionAction,
 ): number {
-  let i = start + 1;
+  const quote = sql[quoteAt];
+  let i = quoteAt + 1;
   while (i < sql.length) {
     const ch = sql[i];
-    if (backslashEscapes && ch === '\\') {
+    if (ch === '\\' && backslash !== 'literal') {
+      if (backslash === 'ambiguous') break;
       i += 2;
     } else if (ch === quote) {
       if (sql[i + 1] === quote) {
@@ -153,5 +213,5 @@ function emitQuoted(
       i += 1;
     }
   }
-  return emit(sql, out, start, -1, action); // unterminated: blank to end
+  return emit(sql, out, start, -1, action); // unterminated or ambiguous: blank to end
 }

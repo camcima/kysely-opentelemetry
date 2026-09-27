@@ -9,7 +9,7 @@ import {
   InMemorySpanExporter,
   SimpleSpanProcessor,
 } from '@opentelemetry/sdk-trace-base';
-import { Kysely, type CompiledQuery, type Dialect } from 'kysely';
+import { Kysely, sql, type CompiledQuery, type Dialect } from 'kysely';
 import { diag } from '@opentelemetry/api';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { observeDialect, ObservedDialect } from '../../src/index.js';
@@ -83,6 +83,24 @@ describe('observeDialect end-to-end', () => {
     }
     const metric = await otel.findMetric('db.client.operation.duration');
     expect(JSON.stringify(metric!.dataPoints.map((p) => p.attributes))).not.toContain(marker);
+  });
+
+  it('NO-PII: postgres sql.lit backslash literals never expose the next literal', async () => {
+    // Kysely's Postgres compiler does not escape backslashes, so sql.lit('C:\\')
+    // emits 'C:\' — a complete literal under Postgres rules.
+    const { db } = makeDb();
+    const marker = 'private@example.com';
+    await sql`select * from files where path = ${sql.lit('C:\\')} and owner = ${sql.lit(marker)}`.execute(
+      db,
+    );
+
+    const [span] = otel.spanExporter.getFinishedSpans();
+    // The full fingerprint proves the detected dialect reached the analyzer:
+    // the fail-closed unknown lexicon would stop at "path =".
+    expect(span!.attributes['db.query.text']).toBe(
+      'select * from files where path = ? and owner = ?',
+    );
+    expect(JSON.stringify(span!.attributes) + span!.name).not.toContain(marker);
   });
 
   it('transaction produces nested spans through the Kysely transaction API', async () => {
