@@ -14,6 +14,16 @@ interface TableNodeShape {
 }
 
 /**
+ * Nodes whose payload is bound application data, not query structure:
+ * insert rows (PrimitiveValueListNode.values) and where/sql-template values
+ * (ValueNode.value). The walk treats them as leaves — descending would let a
+ * table-shaped JSON value surface as a table name (a PII leak cached for
+ * every later query with the same SQL), invoke getters, recurse through
+ * cycles, and cost O(payload) (a Buffer is walked byte by byte).
+ */
+const VALUE_NODE_KINDS = new Set(['ValueNode', 'PrimitiveValueListNode']);
+
+/**
  * Generic recursive walk over the operation-node tree collecting every
  * TableNode. Walking generically (instead of per-clause) covers joins,
  * subqueries, CTEs and dialect-specific nodes for free.
@@ -37,6 +47,7 @@ function walk(
     return;
   }
   const node = value as { kind?: string };
+  if (node.kind !== undefined && VALUE_NODE_KINDS.has(node.kind)) return;
   if (node.kind === 'TableNode') {
     const { table } = node as unknown as TableNodeShape;
     const name = table.schema
