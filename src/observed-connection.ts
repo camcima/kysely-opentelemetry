@@ -20,7 +20,7 @@ import {
 } from './otel/attributes.js';
 import { recordDuration } from './otel/metrics.js';
 import { warnLimited } from './otel/diagnostics.js';
-import { recordError } from './otel/spans.js';
+import { recordError, safeEnd } from './otel/spans.js';
 
 export interface ObservedConnectionDeps {
   readonly options: NormalizedOptions;
@@ -92,7 +92,7 @@ export class ObservedConnection implements DatabaseConnection {
       this.finishFailure(span, ctx, startTime, error);
       throw error;
     } finally {
-      span.end();
+      safeEnd(span);
     }
   }
 
@@ -115,7 +115,7 @@ export class ObservedConnection implements DatabaseConnection {
       );
     } catch (error) {
       this.finishFailure(span, ctx, startTime, error);
-      span.end();
+      safeEnd(span);
       throw error;
     }
     let rowCount = 0;
@@ -148,7 +148,7 @@ export class ObservedConnection implements DatabaseConnection {
           this.finishFailure(span, ctx, startTime, error);
         }
       } finally {
-        span.end();
+        safeEnd(span);
       }
     };
     this.#openStreamEnders.add(endSpan);

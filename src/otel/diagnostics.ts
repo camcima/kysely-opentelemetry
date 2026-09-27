@@ -13,6 +13,11 @@ export function warnLimited(context: string, error?: unknown): void {
   const count = warnCounts.get(context) ?? 0;
   if (count >= MAX_WARNINGS_PER_CONTEXT) return;
   warnCounts.set(context, count + 1);
-  if (error === undefined) diag.warn(`kysely-opentelemetry: ${context}`);
-  else diag.warn(`kysely-opentelemetry: ${context}`, error);
+  try {
+    if (error === undefined) diag.warn(`kysely-opentelemetry: ${context}`);
+    else diag.warn(`kysely-opentelemetry: ${context}`, error);
+  } catch {
+    // The diag logger is user-supplied; it runs inside telemetry catch
+    // blocks, so a throw here would escape into the database call.
+  }
 }
