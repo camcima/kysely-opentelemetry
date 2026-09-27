@@ -9,7 +9,7 @@ import {
   ATTR_TRANSACTION_OUTCOME,
 } from './otel/attributes.js';
 import { warnLimited } from './otel/diagnostics.js';
-import { recordError } from './otel/spans.js';
+import { recordError, safeEnd } from './otel/spans.js';
 
 export class ObservedDriver implements Driver {
   readonly #wrappers = new WeakMap<DatabaseConnection, ObservedConnection>();
@@ -150,7 +150,7 @@ export class ObservedDriver implements Driver {
     } catch (err) {
       warnLimited('failed to finalize transaction span', err);
     } finally {
-      span.end();
+      safeEnd(span);
     }
   }
 }

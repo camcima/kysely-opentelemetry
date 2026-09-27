@@ -1,4 +1,12 @@
-import { metrics, trace } from '@opentelemetry/api';
+import {
+  metrics,
+  ProxyTracerProvider,
+  trace,
+  type Attributes,
+  type Histogram,
+  type Meter,
+  type Tracer,
+} from '@opentelemetry/api';
 import type {
   DatabaseIntrospector,
   Dialect,
@@ -48,24 +56,66 @@ export class ObservedDialect implements Dialect {
   }
 
   createDriver(): Driver {
-    const tracerProvider = this.options.tracerProvider ?? trace;
-    const meterProvider = this.options.meterProvider ?? metrics;
-    const meter = meterProvider.getMeter('kysely-opentelemetry', VERSION);
     const dbSystem = this.options.dbSystem ?? detectDbSystem(this.inner);
     const deps: ObservedConnectionDeps = {
       options: this.options,
       analyze: createAnalyzer(this.options, lexiconFor(dbSystem)),
-      tracer: tracerProvider.getTracer('kysely-opentelemetry', VERSION),
-      ...(this.options.metrics.operationDuration && {
-        histogram: createDurationHistogram(meter),
-      }),
-      ...(this.options.metrics.connectionWaitTime && {
-        waitTimeHistogram: createWaitTimeHistogram(meter),
-        waitTimeAttributes: resolveWaitTimeAttributes(this.options, dbSystem),
-      }),
+      tracer: this.resolveTracer(),
+      ...this.resolveHistograms(dbSystem),
       dbSystem,
     };
+    // Outside any guard: a failing dialect or driver is the application's
+    // error, not a telemetry one, and must propagate unchanged.
     return new ObservedDriver(this.inner.createDriver(), deps);
+  }
+
+  /** Telemetry setup must never prevent the database from being used: an
+   *  injected provider that throws degrades to a no-op tracer. */
+  private resolveTracer(): Tracer {
+    try {
+      return (this.options.tracerProvider ?? trace).getTracer('kysely-opentelemetry', VERSION);
+    } catch (error) {
+      warnLimited('tracer provider failed; tracing disabled', error);
+      // A ProxyTracerProvider with no delegate hands out no-op tracers.
+      return new ProxyTracerProvider().getTracer('kysely-opentelemetry', VERSION);
+    }
+  }
+
+  /** Resolves the meter only when a metric is enabled, and creates each
+   *  histogram independently so one failing signal keeps the others. */
+  private resolveHistograms(
+    dbSystem: string,
+  ): Pick<ObservedConnectionDeps, 'histogram' | 'waitTimeHistogram' | 'waitTimeAttributes'> {
+    const { operationDuration, connectionWaitTime } = this.options.metrics;
+    if (!operationDuration && !connectionWaitTime) return {};
+    let meter: Meter;
+    try {
+      meter = (this.options.meterProvider ?? metrics).getMeter('kysely-opentelemetry', VERSION);
+    } catch (error) {
+      warnLimited('meter provider failed; metrics disabled', error);
+      return {};
+    }
+    const histograms: {
+      histogram?: Histogram;
+      waitTimeHistogram?: Histogram;
+      waitTimeAttributes?: Attributes;
+    } = {};
+    if (operationDuration) {
+      try {
+        histograms.histogram = createDurationHistogram(meter);
+      } catch (error) {
+        warnLimited('failed to create operation duration histogram', error);
+      }
+    }
+    if (connectionWaitTime) {
+      try {
+        histograms.waitTimeHistogram = createWaitTimeHistogram(meter);
+        histograms.waitTimeAttributes = resolveWaitTimeAttributes(this.options, dbSystem);
+      } catch (error) {
+        warnLimited('failed to create connection wait_time histogram', error);
+      }
+    }
+    return histograms;
   }
 
   createQueryCompiler(): QueryCompiler {

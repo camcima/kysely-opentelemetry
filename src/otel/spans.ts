@@ -1,6 +1,7 @@
 import { SpanStatusCode, type Span } from '@opentelemetry/api';
 import type { NormalizedOptions } from '../options.js';
 import { ATTR_ERROR_TYPE } from './attributes.js';
+import { warnLimited } from './diagnostics.js';
 
 /** Semconv error.type: db error code, else error class name, else '_OTHER'. */
 export function errorType(error: unknown): string {
@@ -21,4 +22,16 @@ export function recordError(span: Span, error: unknown, options: NormalizedOptio
   });
   if (options.recordExceptions && error instanceof Error) span.recordException(error);
   return type;
+}
+
+/** Ends a span without ever throwing. The SDK does not guard span
+ *  processors, so a failing onEnd escapes span.end(); called from a
+ *  `finally`, that would replace the query's result or its original error
+ *  (and could make a committed transaction look failed, inviting a retry). */
+export function safeEnd(span: Span): void {
+  try {
+    span.end();
+  } catch (error) {
+    warnLimited('failed to end span', error);
+  }
 }
