@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.2.2](https://github.com/camcima/kysely-opentelemetry/compare/v0.2.1...v0.2.2) (2026-09-28)
+
+### Bug Fixes
+
+* dialect-aware literal and comment scrubbing in query text ([dd73dcd](https://github.com/camcima/kysely-opentelemetry/commit/dd73dcd8bb09391531cec0e9d53b10119a40a37a))
+* end stream spans after iterator cleanup ([6ea8cb9](https://github.com/camcima/kysely-opentelemetry/commit/6ea8cb91d7fa0d6e18e65cea132ca71a0a1b9c96))
+* isolate database outcomes from telemetry failures ([733b3b5](https://github.com/camcima/kysely-opentelemetry/commit/733b3b5b43c836fd7dd25d759911af32c128ef68))
+* stop table extraction at bound-value nodes ([1628df6](https://github.com/camcima/kysely-opentelemetry/commit/1628df647bec9f780bfc291f5739cdbe2a98db44))
+
 ## [0.2.1](https://github.com/camcima/kysely-opentelemetry/compare/v0.2.0...v0.2.1) (2026-08-19)
 
 ### Bug Fixes
