@@ -16,6 +16,20 @@ updates:
       # ships TS >=7.1 support (typescript-eslint/typescript-eslint#10940).
       - dependency-name: typescript
         update-types: ['version-update:semver-major']
+      # Held by maintainer (2026-10): remove this entry to resume updates
+      - dependency-name: '@types/node'
+      # Hold the OpenTelemetry SDK on 2.x: 3.x requires Node >=22.15, while
+      # this library still supports (and CI-tests) Node 20.
+      - dependency-name: '@opentelemetry/context-async-hooks'
+        update-types: ['version-update:semver-major']
+      - dependency-name: '@opentelemetry/sdk-metrics'
+        update-types: ['version-update:semver-major']
+      - dependency-name: '@opentelemetry/sdk-trace-base'
+        update-types: ['version-update:semver-major']
+      # Hold @opentelemetry/api on 1.9.x: every 2.x SDK above caps its peer at
+      # api <1.10.0, so 1.10 waits on the SDK 3 upgrade.
+      - dependency-name: '@opentelemetry/api'
+        update-types: ['version-update:semver-minor']
   - package-ecosystem: github-actions
     directory: /
     schedule:
