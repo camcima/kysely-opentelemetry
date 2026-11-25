@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.2.3](https://github.com/camcima/kysely-opentelemetry/compare/v0.2.2...v0.2.3) (2026-11-25)
+
+### Bug Fixes
+
+* security review findings (query-text scrubbing, hash cost, CI pinning) ([#63](https://github.com/camcima/kysely-opentelemetry/issues/63)) ([6464577](https://github.com/camcima/kysely-opentelemetry/commit/64645774430f097487aee3de7b577466135766e2))
+* keep a stream span open when the iterator recovers from throw() ([#65](https://github.com/camcima/kysely-opentelemetry/issues/65)) ([5567db6](https://github.com/camcima/kysely-opentelemetry/commit/5567db6344cbbd37cfbda04ab501b6b226270d9c))
+
+### Documentation
+
+* show Grafana dashboard and traces in the README ([#64](https://github.com/camcima/kysely-opentelemetry/issues/64)) ([2cc597f](https://github.com/camcima/kysely-opentelemetry/commit/2cc597f0c26c2ecce19bf291522b8a7f544959dd))
+
 ## [0.2.2](https://github.com/camcima/kysely-opentelemetry/compare/v0.2.1...v0.2.2) (2026-09-28)
 
 ### Bug Fixes
