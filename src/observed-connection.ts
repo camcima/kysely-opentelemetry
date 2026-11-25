@@ -192,7 +192,13 @@ export class ObservedConnection implements DatabaseConnection {
         try {
           if (!inner.throw) throw reason;
           const result = await context.with(spanContext, () => inner.throw!(reason));
-          endSpan(reason);
+          // An inner iterator that handles the error may keep streaming (done
+          // is false): the span then stays open and ends with the stream.
+          if (result.done) {
+            endSpan(reason);
+          } else if (Array.isArray(result.value?.rows)) {
+            rowCount += result.value.rows.length;
+          }
           return result;
         } catch (thrown) {
           endSpan(thrown);
