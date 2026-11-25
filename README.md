@@ -18,6 +18,20 @@
 
 OpenTelemetry instrumentation for [Kysely](https://kysely.dev). Wraps any Kysely `Dialect` and emits semantic-convention-compliant `CLIENT` spans plus a `db.client.operation.duration` histogram, tagged with stable, low-cardinality grouping keys — `db.query.summary`, `db.query.fingerprint`, `db.query.hash` — so you can answer "which queries are slowest?", "which consume the most DB time?", and "which query patterns fail?" in Grafana Tempo, Jaeger, Honeycomb, Datadog, or any OTel backend. Production-safe by default: no parameter values are ever captured, and query text is sanitized before it leaves the process.
 
+<p align="center">
+  <img alt="Grafana dashboard built from kysely-opentelemetry telemetry: queries per second, p95 latency, failed-query rate and pool wait, then p95 latency, throughput, share of database time and failures broken down by query, and a table of the slowest database spans from Tempo" src="assets/grafana-dashboard.png" width="100%">
+  <br>
+  <sub>A Grafana dashboard built only from what this library emits: the duration and pool-wait histograms grouped by <code>db.query.summary</code> and <code>error.type</code>, plus a TraceQL table of slow spans.</sub>
+</p>
+
+## Why kysely-opentelemetry
+
+- **One line to adopt.** Wrap your existing `Dialect` in `observeDialect()`. Nothing is monkey-patched, so it works with any driver Kysely supports, in CommonJS and ESM alike.
+- **Find the queries that matter.** Spans and metrics carry `db.query.summary`, `db.query.fingerprint` and `db.query.hash`: low-cardinality keys that group every execution of a query shape, whatever its parameter values.
+- **Transactions, errors and pool pressure included.** `TRANSACTION` spans record their outcome, failures carry the driver's error code as `error.type`, and a `db.client.connection.wait_time` histogram shows time spent waiting for a pooled connection.
+- **Safe by default.** Bind values never reach telemetry, and literals in hand-written SQL are scrubbed using the database's own quoting rules before any text leaves the process. See the [safety model](#safety-model).
+- **Standard semantic conventions.** Any OpenTelemetry backend understands the output: Grafana Tempo and Prometheus, Jaeger, Honeycomb, Datadog and others.
+
 ## Install
 
 ```bash
@@ -75,6 +89,22 @@ db.response.returned_rows    = 12
 ```
 
 Notice there is no `'paid'` anywhere — the parameter value never reaches the span. `db.query.text` and `db.query.fingerprint` show the sanitized, placeholder-normalized SQL (identical here because the default `queryText: 'sanitized'` mode reuses the fingerprint).
+
+### See it in Grafana
+
+Each query span nests under whatever span is active: below, an HTTP request and the `TRANSACTION` span that `db.transaction()` opens. When a query fails, its span records the driver's error code as `error.type` (here Postgres `23514`, a check-constraint violation), and the `TRANSACTION` span records `kysely.transaction.outcome = rolled_back`:
+
+<p align="center">
+  <img alt="Tempo trace of a POST /orders request: a TRANSACTION span containing SELECT products, INSERT orders, INSERT order_items and a failed UPDATE products span, expanded to show error.type 23514, the sanitized db.query.text and fingerprint, db.query.hash and the other span attributes" src="assets/grafana-trace-transaction.png" width="100%">
+</p>
+
+Hand-written SQL gets the same protection. The `'day'`, `'paid'` and `'30 days'` literals in this `sql` template reach Tempo as `?`, and the span is marked `kysely.query.raw`:
+
+<p align="center">
+  <img alt="Tempo span for a raw SQL revenue report: db.query.text and db.query.fingerprint show date_trunc(?, created_at) and WHERE status = ? with every literal replaced by a placeholder, and kysely.query.raw is true" src="assets/grafana-trace-raw-sql.png" width="100%">
+</p>
+
+The screenshots come from a small simulated shop API; [`scripts/readme-screenshots`](scripts/readme-screenshots) runs it against a local Grafana stack in a couple of minutes.
 
 Want a runnable end-to-end setup instead of a snippet? [`kysely-opentelemetry-examples`](https://github.com/camcima/kysely-opentelemetry-examples) wires this library into an Express + Kysely + Postgres app with a Docker Compose stack (OTel Collector, Tempo, Prometheus, Grafana), a pre-provisioned dashboard built on the grouping keys, and an in-process smoke test that asserts the full telemetry contract — including that no bind-parameter value ever reaches a span.
 
