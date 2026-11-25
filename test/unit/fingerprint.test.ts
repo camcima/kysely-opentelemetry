@@ -45,6 +45,22 @@ describe('fingerprintSql', () => {
     expect(fingerprintSql('WHERE id = a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11')).toBe('WHERE id = ?');
   });
 
+  it('replaces binary, octal and digit-separated numeric literals', () => {
+    expect(fingerprintSql('WHERE a = 0b1010 AND b = 0o755 AND c = 0B11 AND d = 0O17')).toBe(
+      'WHERE a = ? AND b = ? AND c = ? AND d = ?',
+    );
+    expect(fingerprintSql('WHERE a = 1_000_000 AND b = 0x_FF_FF AND c = 1_000.000_5')).toBe(
+      'WHERE a = ? AND b = ? AND c = ?',
+    );
+    expect(fingerprintSql('WHERE a = 0b1010_1010 AND b = 1_5e1_0')).toBe('WHERE a = ? AND b = ?');
+  });
+
+  it('does not mangle identifiers that look like number prefixes', () => {
+    expect(fingerprintSql('SELECT t_1, col_0b1, x0o7 FROM t2_3')).toBe(
+      'SELECT t_1, col_0b1, x0o7 FROM t2_3',
+    );
+  });
+
   it('normalizes positional placeholders to ?', () => {
     expect(fingerprintSql('SELECT * FROM orders WHERE id = $1 AND status = $2')).toBe(
       'SELECT * FROM orders WHERE id = ? AND status = ?',
