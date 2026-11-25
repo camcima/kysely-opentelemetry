@@ -27,6 +27,28 @@ describe('hashFingerprint', () => {
     expect(hashFingerprint('SELECT a')).not.toBe(hashFingerprint('SELECT b'));
   });
 
+  it('agrees with a straightforward BigInt FNV-1a over varied inputs', () => {
+    // Differential guard for the 32-bit-limb implementation: thousands of
+    // inputs make both halves hit leading-zero and carry edge cases.
+    const reference = (s: string): string => {
+      let h = 0xcbf29ce484222325n;
+      for (const b of new TextEncoder().encode(s)) {
+        h ^= BigInt(b);
+        h = (h * 0x100000001b3n) & 0xffffffffffffffffn;
+      }
+      return h.toString(16).padStart(16, '0');
+    };
+    const alphabet = ['a', 'Z', '0', ' ', '?', '"', 'é', '中', '😀', '\uD800', '\u0000', 'ÿ'];
+    let seed = 1;
+    const next = () => (seed = (Math.imul(seed, 1103515245) + 12345) >>> 0);
+    for (let n = 0; n < 5000; n += 1) {
+      let s = '';
+      const len = next() % 40;
+      for (let i = 0; i < len; i += 1) s += alphabet[next() % alphabet.length];
+      expect(hashFingerprint(s)).toBe(reference(s));
+    }
+  });
+
   it('hashes UTF-8 bytes so non-ASCII identifiers are handled', () => {
     expect(hashFingerprint('select "café"')).toMatch(/^[0-9a-f]{16}$/);
     expect(hashFingerprint('select "café"')).not.toBe(hashFingerprint('select "cafe"'));
