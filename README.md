@@ -157,7 +157,7 @@ observeDialect(dialect, {
 });
 ```
 
-Runs last, on whatever text `queryText` would otherwise emit (`sanitized` or `parameterized`), and does **not** affect `db.query.fingerprint`, `db.query.hash`, or table extraction. If it throws, `db.query.text` is omitted for that query rather than risking a leak — instrumentation degrades safely instead of failing the query.
+Runs last, on whatever text `queryText` would otherwise emit (`sanitized` or `parameterized`). It receives the complete text, before `maxQueryTextLength` is applied, so a value can never be split at the truncation point; its result is then truncated. It does **not** affect `db.query.fingerprint`, `db.query.hash`, or table extraction. If it throws, `db.query.text` is omitted for that query rather than risking a leak — instrumentation degrades safely instead of failing the query.
 
 **Warning:** a `redact` hook that runs a slow or unbounded regex on every query's SQL text runs on your hot path; keep it fast and defensive (bounded regexes, no unbounded backtracking).
 
