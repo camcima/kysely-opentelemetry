@@ -11,11 +11,10 @@
  * then only see code. Order matters: placeholders before numbers ($1 must
  * not be half-eaten by the numeric rule).
  */
-// Double-quoted text is intentionally NOT scrubbed: in Postgres/SQLite it
-// delimits identifiers (e.g. "orders"), and scrubbing would corrupt the
-// fingerprint and table extraction. Values must reach us as bind parameters
-// (Kysely's default) or single-quoted literals; a MySQL "..."-quoted string
-// literal in hand-written raw SQL is a known, documented limitation.
+// Double-quoted text follows the lexicon: on MySQL/MariaDB (default mode) it
+// is a string literal and is scrubbed; elsewhere it delimits identifiers
+// (e.g. "orders") and is kept, since scrubbing would corrupt the fingerprint
+// and table extraction.
 
 import { LEXICONS, type SqlLexicon } from './lexicon.js';
 import { scrubSqlText } from './sql-text.js';

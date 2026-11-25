@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { sql } from 'kysely';
+import { LEXICONS } from '../../src/analysis/lexicon.js';
 import { extractTables, extractTablesFromRawSql } from '../../src/analysis/tables.js';
 import { compile, db } from '../helpers/compile.js';
 
@@ -171,6 +172,15 @@ describe('extractTablesFromRawSql', () => {
     expect(
       extractTablesFromRawSql('SELECT * FROM "orders" JOIN "customers" ON 1=1').tables,
     ).toEqual(['orders', 'customers']);
+  });
+
+  it('mysql: a double-quoted region is a string literal, never a table name', () => {
+    expect(
+      extractTablesFromRawSql('SELECT * FROM "orders" WHERE id = 1', LEXICONS.mysql).tables,
+    ).toEqual([]);
+    expect(
+      extractTablesFromRawSql('SELECT * FROM `orders` WHERE id = 1', LEXICONS.mysql).tables,
+    ).toEqual(['orders']);
   });
 
   it('extracts backtick- and bracket-quoted table names', () => {

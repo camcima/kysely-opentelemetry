@@ -166,6 +166,33 @@ describe('dialect-aware literal and comment scrubbing', () => {
     expect(fingerprintSql(`SELECT 1 # ${secret}`, LEXICONS.mysql)).toBe('SELECT ?');
   });
 
+  it('mysql: double-quoted string literals are scrubbed', () => {
+    // Without ANSI_QUOTES (the MySQL default), "..." delimits a string.
+    expect(fingerprintSql(`SELECT * FROM t WHERE token = "${secret}"`, LEXICONS.mysql)).toBe(
+      'SELECT * FROM t WHERE token = ?',
+    );
+  });
+
+  it('mysql: a backslash-escaped double quote does not end the literal early', () => {
+    expect(fingerprintSql(`SELECT * FROM t WHERE a = "it\\"s ${secret}"`, LEXICONS.mysql)).toBe(
+      'SELECT * FROM t WHERE a = ?',
+    );
+  });
+
+  it('mysql: backtick identifiers stay intact', () => {
+    expect(fingerprintSql('SELECT * FROM `orders` WHERE id = 1', LEXICONS.mysql)).toBe(
+      'SELECT * FROM `orders` WHERE id = ?',
+    );
+  });
+
+  it('postgres, sqlite, mssql: double-quoted identifiers stay intact', () => {
+    for (const lexicon of [LEXICONS.postgresql, LEXICONS.sqlite, LEXICONS.mssql]) {
+      expect(fingerprintSql('SELECT * FROM "orders" WHERE id = 1', lexicon)).toBe(
+        'SELECT * FROM "orders" WHERE id = ?',
+      );
+    }
+  });
+
   it('postgres: # stays an operator', () => {
     expect(fingerprintSql('SELECT a # b FROM t', LEXICONS.postgresql)).toBe('SELECT a # b FROM t');
   });
