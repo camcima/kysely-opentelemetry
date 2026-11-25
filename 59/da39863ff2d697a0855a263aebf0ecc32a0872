@@ -1,0 +1,19 @@
+test/integration/mysql.test.ts
+  s_b25f1a43e7e0be::t_5b69fc6d9d3486 57-69
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "59da39863ff2d697a0855a263aebf0ecc32a0872",
+  "prompts": {},
+  "sessions": {
+    "s_b25f1a43e7e0be": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "66d32ff8-dfa2-4d59-8bfe-92363e484463",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Carlos Cima <camcima@users.noreply.github.com>"
+    }
+  }
+}
