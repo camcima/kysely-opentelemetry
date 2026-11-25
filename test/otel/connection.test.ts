@@ -222,6 +222,29 @@ describe('ObservedConnection.streamQuery', () => {
     expect(spans[0]!.status.code).toBe(SpanStatusCode.ERROR);
   });
 
+  it('throw() on an inner iterator without a throw method rejects and ends the span', async () => {
+    const reason = new Error('consumer aborted');
+    const { connection, inner } = makeConnection();
+    const rows = [{ rows: [{ id: 1 }] }, { rows: [{ id: 2 }] }];
+    // A hand-written iterator: next() only, no return() or throw().
+    (inner as any).streamQuery = () => ({
+      [Symbol.asyncIterator]() {
+        return this;
+      },
+      async next() {
+        const value = rows.shift();
+        return value ? { done: false, value } : { done: true, value: undefined };
+      },
+    });
+    const iterator = connection.streamQuery(SELECT, 1);
+    await iterator.next();
+    await expect(iterator.throw!(reason)).rejects.toBe(reason);
+    const spans = otel.spanExporter.getFinishedSpans();
+    expect(spans).toHaveLength(1);
+    expect(spans[0]!.status.code).toBe(SpanStatusCode.ERROR);
+    expect(spans[0]!.status.message).toBe('consumer aborted');
+  });
+
   it('does not record a duration metric when a stream is force-closed on release', async () => {
     const { connection } = makeConnection(() => ({ rows: [{ id: 1 }, { id: 2 }] }));
     const iterator = connection.streamQuery(SELECT, 1);
@@ -286,6 +309,21 @@ describe('shouldObserve filter', () => {
     expect(otel.spanExporter.getFinishedSpans()).toHaveLength(2); // still observed
   });
 
+  it('passes a filtered-out stream through unobserved', async () => {
+    const options = normalizeOptions({ shouldObserve: () => false });
+    const inner = new FakeConnection((() => ({ rows: [{ id: 1 }, { id: 2 }] })) as any);
+    const connection = new ObservedConnection(inner, {
+      options,
+      analyze: createAnalyzer(options),
+      tracer: trace.getTracer('test'),
+      dbSystem: 'postgresql',
+    });
+    const rows: unknown[] = [];
+    for await (const chunk of connection.streamQuery(SELECT, 1)) rows.push(...chunk.rows);
+    expect(rows).toEqual([{ id: 1 }, { id: 2 }]);
+    expect(otel.spanExporter.getFinishedSpans()).toHaveLength(0);
+  });
+
   it('warns through diag when the filter throws (fail-open must not be silent)', async () => {
     const spy = vi.spyOn(diag, 'warn').mockImplementation(() => {});
     const throwing = makeFiltered(() => {
@@ -294,6 +332,44 @@ describe('shouldObserve filter', () => {
     await throwing.executeQuery(SELECT);
     expect(spy.mock.calls.some(([msg]) => String(msg).includes('shouldObserve'))).toBe(true);
     spy.mockRestore();
+  });
+});
+
+describe('ObservedConnection session members (Kysely 0.29+)', () => {
+  // Kysely calls these on the connection the driver handed out (the wrapper)
+  // to abort in-flight queries; they must reach the inner connection.
+  type ControlProvider = Parameters<NonNullable<ObservedConnection['cancelQuery']>>[0];
+
+  it('forwards cancelQuery, killSession and collectSessionInfo to the inner connection', async () => {
+    const calls: string[] = [];
+    const provider = (async () => {}) as ControlProvider;
+    const inner = new FakeConnection((() => ({ rows: [] })) as any) as FakeConnection & {
+      cancelQuery: (p: ControlProvider) => Promise<void>;
+      killSession: (p: ControlProvider) => Promise<void>;
+      collectSessionInfo: () => Promise<void>;
+    };
+    inner.cancelQuery = async (p) => void calls.push(`cancel:${p === provider}`);
+    inner.killSession = async (p) => void calls.push(`kill:${p === provider}`);
+    inner.collectSessionInfo = async () => void calls.push('collect');
+
+    const options = normalizeOptions();
+    const connection = new ObservedConnection(inner, {
+      options,
+      analyze: createAnalyzer(options),
+      tracer: trace.getTracer('test'),
+      dbSystem: 'postgresql',
+    });
+    await connection.collectSessionInfo!();
+    await connection.cancelQuery!(provider);
+    await connection.killSession!(provider);
+    expect(calls).toEqual(['collect', 'cancel:true', 'kill:true']);
+  });
+
+  it('leaves them undefined when the inner connection lacks them', () => {
+    const { connection } = makeConnection(); // FakeConnection defines none
+    expect(connection.cancelQuery).toBeUndefined();
+    expect(connection.killSession).toBeUndefined();
+    expect(connection.collectSessionInfo).toBeUndefined();
   });
 });
 
