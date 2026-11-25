@@ -1,0 +1,30 @@
+test/unit/sanitization-failure.test.ts
+  s_b25f1a43e7e0be::t_57bcf2ab43e652 1-50
+test/unit/tables.test.ts
+  s_b25f1a43e7e0be::t_4c74a448b8d144 145-153
+test/otel/driver.test.ts
+  s_b25f1a43e7e0be::t_2feb0d2f304c80 281-309
+test/otel/connection.test.ts
+  s_b25f1a43e7e0be::t_3b5e6f7c7eaedb 338-375
+  s_b25f1a43e7e0be::t_7612ecef5df4cd 312-326
+  s_b25f1a43e7e0be::t_3a81de764320c2 225-247
+test/integration/postgres.test.ts
+  s_b25f1a43e7e0be::t_60ea0b8ba153a4 105-107
+  s_b25f1a43e7e0be::t_1d2c1a89d669cf 75-104,108-112
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "82d23358bd9238fcc87d0e41e469234d47cc22c3",
+  "prompts": {},
+  "sessions": {
+    "s_b25f1a43e7e0be": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "66d32ff8-dfa2-4d59-8bfe-92363e484463",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Carlos Cima <camcima@users.noreply.github.com>"
+    }
+  }
+}
