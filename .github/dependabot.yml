@@ -19,16 +19,19 @@ updates:
       # Keep @types/node on its current major; bump majors deliberately.
       - dependency-name: '@types/node'
         update-types: ['version-update:semver-major']
-      # Hold the test SDK on the OpenTelemetry JS 2.x line. 2.x
-      # (@opentelemetry/sdk-trace-base) caps its peer at api <1.10.0, while the
-      # 3.x packages require api >=1.10.0 and move tracing to the separate
-      # @opentelemetry/sdk-trace package, so the lines cannot be mixed. Moving
-      # to 3.x is a deliberate migration of all of these together.
+      # Hold the test SDK on the OpenTelemetry JS 2.x line. 3.x requires
+      # Node.js >=22.15, while this library still supports (and CI-tests)
+      # Node.js 20. 3.x also requires api >=1.10.0, which 2.x
+      # (@opentelemetry/sdk-trace-base) does not accept, and moves tracing to
+      # the separate @opentelemetry/sdk-trace package, so the lines cannot be
+      # mixed: moving to 3.x is a deliberate migration of all of these together.
       - dependency-name: '@opentelemetry/api'
         update-types: ['version-update:semver-minor']
       - dependency-name: '@opentelemetry/sdk-metrics'
         update-types: ['version-update:semver-major']
       - dependency-name: '@opentelemetry/context-async-hooks'
+        update-types: ['version-update:semver-major']
+      - dependency-name: '@opentelemetry/sdk-trace-base'
         update-types: ['version-update:semver-major']
   - package-ecosystem: github-actions
     directory: /

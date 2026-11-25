@@ -15,8 +15,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node: [22, 24]
+        node: [20, 22, 24]
         kysely: ['0.27', '0.28', '0.29']
+        exclude:
+          # Kysely 0.29 itself requires Node.js >=22.
+          - node: 20
+            kysely: '0.29'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1

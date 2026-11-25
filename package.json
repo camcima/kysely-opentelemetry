@@ -35,7 +35,7 @@
   ],
   "sideEffects": false,
   "engines": {
-    "node": ">=22"
+    "node": ">=20"
   },
   "keywords": [
     "kysely",
