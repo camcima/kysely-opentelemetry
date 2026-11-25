@@ -54,6 +54,19 @@ describe('mysql end-to-end', () => {
     expect(JSON.stringify(select.attributes)).not.toContain('paid');
   });
 
+  it('scrubs a double-quoted string literal in raw SQL', async () => {
+    // The real server proves "..." is a string here: as an identifier this
+    // query would fail with "Unknown column".
+    const { rows } = await sql<{
+      token: string;
+    }>`SELECT "reset-token-8f2c" AS token`.execute(db);
+    expect(rows[0]?.token).toBe('reset-token-8f2c');
+
+    const span = otel.spanExporter.getFinishedSpans().at(-1)!;
+    expect(span.attributes['db.query.text']).toBe('SELECT ? AS token');
+    expect(JSON.stringify(span.attributes)).not.toContain('reset-token');
+  });
+
   it('reports affected rows on update', async () => {
     await db.insertInto('orders').values({ id: 2, status: 'new' }).execute();
     await db.updateTable('orders').set({ status: 'done' }).where('id', '=', 2).execute();
