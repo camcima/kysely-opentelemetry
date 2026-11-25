@@ -142,6 +142,15 @@ describe('extractTablesFromRawSql', () => {
     expect(tables).toEqual(['summary', 'raw_events']);
   });
 
+  it('promotes a CTE-body table that the main statement also references', () => {
+    // customers is first seen inside the CTE (after orders), then again at the
+    // top level: it moves ahead of orders, which only the CTE body uses.
+    const { tables } = extractTablesFromRawSql(
+      'WITH recent AS (SELECT * FROM orders JOIN customers ON true) INSERT INTO archive SELECT * FROM customers',
+    );
+    expect(tables).toEqual(['archive', 'customers', 'orders']);
+  });
+
   it('excludes all aliases of a multi-CTE query', () => {
     const { tables } = extractTablesFromRawSql(
       'WITH a AS (SELECT 1 FROM x), b AS (SELECT 2 FROM y) SELECT * FROM a JOIN b ON 1=1 JOIN z ON 1=1',

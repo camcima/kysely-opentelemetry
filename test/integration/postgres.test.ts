@@ -72,6 +72,44 @@ describe('postgres end-to-end', () => {
     expect(failed.attributes['error.type']).toBe('23505'); // unique_violation
   });
 
+  it('cancels an aborted query on the server through the wrapped connection', async () => {
+    // Kysely 0.29 calls collectSessionInfo() and cancelQuery() on the
+    // connection the driver handed out, which is the ObservedConnection.
+    const controller = new AbortController();
+    const query = sql`SELECT pg_sleep(30)`.execute(db, {
+      signal: controller.signal,
+      inflightQueryAbortStrategy: 'cancel query',
+    });
+    await new Promise((resolve) => setTimeout(resolve, 300)); // let it reach the server
+    controller.abort();
+    await expect(query).rejects.toThrow();
+
+    // pg_cancel_backend reached the real pg connection: the sleep stops server-side.
+    await expect
+      .poll(
+        async () => {
+          const { rows } = await sql<{ n: number }>`
+            SELECT count(*)::int AS n FROM pg_stat_activity
+            WHERE state = 'active' AND query LIKE 'SELECT pg_sleep%'`.execute(db);
+          return rows[0]!.n;
+        },
+        { timeout: 5_000 },
+      )
+      .toBe(0);
+    // The cancelled query's span records Postgres's query_canceled code.
+    await expect
+      .poll(
+        () =>
+          otel.spanExporter
+            .getFinishedSpans()
+            .find((s) => s.attributes['db.query.text'] === 'SELECT pg_sleep(?)')?.attributes[
+            'error.type'
+          ],
+        { timeout: 5_000 },
+      )
+      .toBe('57014');
+  });
+
   it('flags raw sql queries', async () => {
     await sql`SELECT count(*) FROM orders WHERE status = ${'paid'}`.execute(db);
     const span = otel.spanExporter.getFinishedSpans().at(-1)!;

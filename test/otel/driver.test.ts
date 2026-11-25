@@ -278,6 +278,35 @@ describe('ObservedDriver savepoint forwarding (Kysely 0.28+)', () => {
   });
 });
 
+describe('ObservedDriver transaction span backstop', () => {
+  it('ends a TRANSACTION span left open at release as released_unfinished', async () => {
+    const { driver } = makeDriver();
+    const connection = await driver.acquireConnection();
+    await driver.beginTransaction(connection, {});
+    expect(otel.spanExporter.getFinishedSpans()).toHaveLength(0);
+
+    await driver.releaseConnection(connection); // no commit or rollback first
+    const spans = otel.spanExporter.getFinishedSpans();
+    expect(spans).toHaveLength(1);
+    expect(spans[0]!.name).toBe('TRANSACTION');
+    expect(spans[0]!.attributes['kysely.transaction.outcome']).toBe('released_unfinished');
+    expect(spans[0]!.status.code).not.toBe(SpanStatusCode.ERROR);
+  });
+
+  it('does not parent later queries on the reused connection to the dead TRANSACTION', async () => {
+    const { driver } = makeDriver();
+    const first = await driver.acquireConnection();
+    await driver.beginTransaction(first, {});
+    await driver.releaseConnection(first);
+
+    const second = await driver.acquireConnection();
+    expect(second).toBe(first); // same wrapper for the same inner connection
+    await second.executeQuery(SELECT);
+    const query = otel.spanExporter.getFinishedSpans().find((s) => s.name === 'SELECT orders')!;
+    expect(query.parentSpanContext).toBeUndefined();
+  });
+});
+
 describe('ObservedDriver stream span backstop', () => {
   it('ends abandoned stream spans when the connection is released', async () => {
     const { driver } = makeDriver({}, () => ({ rows: [{ id: 1 }, { id: 2 }] }));
