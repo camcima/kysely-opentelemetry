@@ -15,7 +15,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node: [20, 22, 24]
+        node: [20, 22, 24, 26]
         kysely: ['0.27', '0.28', '0.29']
         exclude:
           # Kysely 0.29 itself requires Node.js >=22.
