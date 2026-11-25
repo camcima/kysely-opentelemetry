@@ -1,0 +1,22 @@
+README.md
+  s_b25f1a43e7e0be::t_715f8240c25f12 21-31,33-34
+  s_b25f1a43e7e0be::t_04678eac98a39c 32
+  s_b25f1a43e7e0be::t_efe7982b442626 93-107
+  s_b25f1a43e7e0be::t_41c10a397c4420 108
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "3bb8f75d6b919faf162ec71e2532675c1ead9d27",
+  "prompts": {},
+  "sessions": {
+    "s_b25f1a43e7e0be": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "66d32ff8-dfa2-4d59-8bfe-92363e484463",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Carlos Cima <camcima@users.noreply.github.com>"
+    }
+  }
+}
