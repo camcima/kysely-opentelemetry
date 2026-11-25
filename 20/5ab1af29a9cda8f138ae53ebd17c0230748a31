@@ -1,0 +1,29 @@
+package.json
+  s_3aa492c13d3dc2::t_31c34ebc900507 3
+src/version.ts
+  s_d50cc9b0b53deb::t_969b81bd726748 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "205ab1af29a9cda8f138ae53ebd17c0230748a31",
+  "prompts": {},
+  "sessions": {
+    "s_3aa492c13d3dc2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "bb5948fa-3dfe-4bd5-adad-5c217ffa59e6",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Carlos Cima <camcima@users.noreply.github.com>"
+    },
+    "s_d50cc9b0b53deb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8f9a7797-1f79-4b97-8965-88b36451e687",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Carlos Cima <camcima@users.noreply.github.com>"
+    }
+  }
+}
