@@ -270,6 +270,43 @@ describe('ObservedConnection.streamQuery', () => {
     expect(spans[0]!.attributes['db.response.returned_rows']).toBe(4);
   });
 
+  it('throw() that the inner iterator catches and then finishes ends the span with the error', async () => {
+    const reason = new Error('consumer aborted');
+    const { connection, inner } = makeConnection();
+    // Catches the injected error, then returns: throw() resolves with done.
+    (inner as any).streamQuery = async function* () {
+      try {
+        yield { rows: [{ id: 1 }] };
+      } catch {
+        return;
+      }
+    };
+    const iterator = connection.streamQuery(SELECT, 1);
+    await iterator.next();
+    expect(await iterator.throw!(reason)).toEqual({ done: true, value: undefined });
+    const spans = otel.spanExporter.getFinishedSpans();
+    expect(spans).toHaveLength(1);
+    expect(spans[0]!.status.code).toBe(SpanStatusCode.ERROR);
+    expect(spans[0]!.status.message).toBe('consumer aborted');
+  });
+
+  it('throw() recovery yielding a chunk without a rows array leaves the row count alone', async () => {
+    const { connection, inner } = makeConnection();
+    (inner as any).streamQuery = async function* () {
+      try {
+        yield { rows: [{ id: 1 }] };
+      } catch {
+        yield {}; // not a QueryResult with rows: counted as zero
+      }
+    };
+    const iterator = connection.streamQuery(SELECT, 1);
+    await iterator.next();
+    expect((await iterator.throw!(new Error('retry'))).done).toBe(false);
+    expect((await iterator.next()).done).toBe(true);
+    const [span] = otel.spanExporter.getFinishedSpans();
+    expect(span!.attributes['db.response.returned_rows']).toBe(1);
+  });
+
   it('does not record a duration metric when a stream is force-closed on release', async () => {
     const { connection } = makeConnection(() => ({ rows: [{ id: 1 }, { id: 2 }] }));
     const iterator = connection.streamQuery(SELECT, 1);
