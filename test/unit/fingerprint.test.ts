@@ -45,6 +45,22 @@ describe('fingerprintSql', () => {
     expect(fingerprintSql('WHERE id = a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11')).toBe('WHERE id = ?');
   });
 
+  it('replaces binary, octal and digit-separated numeric literals', () => {
+    expect(fingerprintSql('WHERE a = 0b1010 AND b = 0o755 AND c = 0B11 AND d = 0O17')).toBe(
+      'WHERE a = ? AND b = ? AND c = ? AND d = ?',
+    );
+    expect(fingerprintSql('WHERE a = 1_000_000 AND b = 0x_FF_FF AND c = 1_000.000_5')).toBe(
+      'WHERE a = ? AND b = ? AND c = ?',
+    );
+    expect(fingerprintSql('WHERE a = 0b1010_1010 AND b = 1_5e1_0')).toBe('WHERE a = ? AND b = ?');
+  });
+
+  it('does not mangle identifiers that look like number prefixes', () => {
+    expect(fingerprintSql('SELECT t_1, col_0b1, x0o7 FROM t2_3')).toBe(
+      'SELECT t_1, col_0b1, x0o7 FROM t2_3',
+    );
+  });
+
   it('normalizes positional placeholders to ?', () => {
     expect(fingerprintSql('SELECT * FROM orders WHERE id = $1 AND status = $2')).toBe(
       'SELECT * FROM orders WHERE id = ? AND status = ?',
@@ -164,6 +180,33 @@ describe('dialect-aware literal and comment scrubbing', () => {
 
   it('mysql: # comments are stripped', () => {
     expect(fingerprintSql(`SELECT 1 # ${secret}`, LEXICONS.mysql)).toBe('SELECT ?');
+  });
+
+  it('mysql: double-quoted string literals are scrubbed', () => {
+    // Without ANSI_QUOTES (the MySQL default), "..." delimits a string.
+    expect(fingerprintSql(`SELECT * FROM t WHERE token = "${secret}"`, LEXICONS.mysql)).toBe(
+      'SELECT * FROM t WHERE token = ?',
+    );
+  });
+
+  it('mysql: a backslash-escaped double quote does not end the literal early', () => {
+    expect(fingerprintSql(`SELECT * FROM t WHERE a = "it\\"s ${secret}"`, LEXICONS.mysql)).toBe(
+      'SELECT * FROM t WHERE a = ?',
+    );
+  });
+
+  it('mysql: backtick identifiers stay intact', () => {
+    expect(fingerprintSql('SELECT * FROM `orders` WHERE id = 1', LEXICONS.mysql)).toBe(
+      'SELECT * FROM `orders` WHERE id = ?',
+    );
+  });
+
+  it('postgres, sqlite, mssql: double-quoted identifiers stay intact', () => {
+    for (const lexicon of [LEXICONS.postgresql, LEXICONS.sqlite, LEXICONS.mssql]) {
+      expect(fingerprintSql('SELECT * FROM "orders" WHERE id = 1', lexicon)).toBe(
+        'SELECT * FROM "orders" WHERE id = ?',
+      );
+    }
   });
 
   it('postgres: # stays an operator', () => {

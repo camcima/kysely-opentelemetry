@@ -65,15 +65,17 @@ export function scrubSqlText(sql: string, lexicon: SqlLexicon = LEXICONS.unknown
 /** Like maskSqlText, but a quoted identifier containing one simple,
  *  non-keyword name is replaced by that bare name (quotes dropped) so the
  *  raw-SQL table scanner can extract `FROM "orders"`. Any other identifier
- *  content becomes a `?` sentinel (non-whitespace, so a scanner's \s+ can
- *  never bridge the gap to the next keyword). Output length is NOT
- *  preserved; callers must scan the transformed string only, never map
- *  positions back. */
+ *  content, and every string literal, becomes a `?` sentinel (non-whitespace,
+ *  so a scanner's \s+ can never bridge the gap to the next keyword). Output
+ *  length is NOT preserved; callers must scan the transformed string only,
+ *  never map positions back. */
 export function maskSqlTextUnquotingIdentifiers(
   sql: string,
   lexicon: SqlLexicon = LEXICONS.unknown,
 ): string {
-  return transformSql(sql, lexicon, (region) => (region === 'identifier' ? 'unquote' : 'blank'));
+  return transformSql(sql, lexicon, (region) =>
+    region === 'identifier' ? 'unquote' : region === 'string' ? 'placeholder' : 'blank',
+  );
 }
 
 function transformSql(
@@ -109,6 +111,10 @@ function transformSql(
       // backslash escapes apply only here. `date'...'` is not one (the e
       // ends an identifier), hence the word-boundary check.
       i = emitQuoted(sql, out, i, i + 1, 'escape', actionFor('string'));
+    } else if (ch === '"' && lexicon.doubleQuote === 'string') {
+      // MySQL default mode: "..." is a string literal, with the same
+      // backslash rules as '...'.
+      i = emitQuoted(sql, out, i, i, stringBackslash, actionFor('string'));
     } else if (ch === '"' || ch === '`') {
       i = emitQuoted(sql, out, i, i, 'literal', actionFor('identifier'));
     } else if (ch === '[') {

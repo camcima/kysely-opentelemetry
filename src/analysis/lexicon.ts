@@ -16,6 +16,16 @@ export interface SqlLexicon {
    *   placed safely; the scanner blanks to end of input (fail closed).
    */
   readonly backslash: 'escape' | 'literal' | 'e-strings' | 'ambiguous';
+  /**
+   * What `"..."` delimits:
+   * - `identifier`: standard SQL (Postgres, SQLite, SQL Server); kept
+   *   verbatim so fingerprints and table extraction see the name.
+   * - `string`: a string literal (MySQL/MariaDB without ANSI_QUOTES, the
+   *   default); scrubbed like a single-quoted literal, backslash rules
+   *   included. Kysely's MySQL compiler quotes identifiers with backticks,
+   *   so builder queries never rely on `"` identifiers there.
+   */
+  readonly doubleQuote: 'identifier' | 'string';
   /** Block comments nest (`/* a /* b *\/ still comment *\/`). */
   readonly nestedBlockComments: boolean;
   /** `#` starts a line comment (MySQL). Elsewhere it is an operator or a
@@ -24,12 +34,40 @@ export interface SqlLexicon {
 }
 
 export const LEXICONS = {
-  postgresql: { backslash: 'e-strings', nestedBlockComments: true, hashComments: false },
-  mysql: { backslash: 'escape', nestedBlockComments: false, hashComments: true },
-  sqlite: { backslash: 'literal', nestedBlockComments: false, hashComments: false },
-  mssql: { backslash: 'literal', nestedBlockComments: true, hashComments: false },
-  /** Fail closed on every axis: each choice can only blank more text. */
-  unknown: { backslash: 'ambiguous', nestedBlockComments: true, hashComments: true },
+  postgresql: {
+    backslash: 'e-strings',
+    nestedBlockComments: true,
+    hashComments: false,
+    doubleQuote: 'identifier',
+  },
+  mysql: {
+    backslash: 'escape',
+    nestedBlockComments: false,
+    hashComments: true,
+    doubleQuote: 'string',
+  },
+  sqlite: {
+    backslash: 'literal',
+    nestedBlockComments: false,
+    hashComments: false,
+    doubleQuote: 'identifier',
+  },
+  mssql: {
+    backslash: 'literal',
+    nestedBlockComments: true,
+    hashComments: false,
+    doubleQuote: 'identifier',
+  },
+  /** Fail closed on every axis where that costs nothing: each choice can only
+   *  blank more text. Double quotes stay identifiers (the SQL standard), since
+   *  scrubbing them would break fingerprints and table extraction for every
+   *  unrecognized standard-SQL database. */
+  unknown: {
+    backslash: 'ambiguous',
+    nestedBlockComments: true,
+    hashComments: true,
+    doubleQuote: 'identifier',
+  },
 } as const satisfies Record<string, SqlLexicon>;
 
 const BY_DB_SYSTEM: Readonly<Record<string, SqlLexicon>> = {

@@ -66,6 +66,19 @@ describe('createAnalyzer', () => {
     expect(analyzeThrow(compile((db) => db.selectFrom('orders').selectAll())).text).toBeUndefined();
   });
 
+  it('redact sees the whole text, so truncation cannot split a value it matches', () => {
+    // A cap of 25 cuts through "customer_ssn_records"; a hook that only
+    // matches the complete quoted name must still remove all of it.
+    const redact = (sql: string) => sql.replace(/"customer_ssn_records"/g, '[t]');
+    const query = compile((db) => db.selectFrom('customer_ssn_records').selectAll());
+    for (const queryText of ['sanitized', 'parameterized'] as const) {
+      const analyzeCapped = createAnalyzer(
+        normalizeOptions({ queryText, maxQueryTextLength: 25, redact }),
+      );
+      expect(analyzeCapped(query).text).toBe('select * from [t]');
+    }
+  });
+
   it('truncates fingerprint and text to maxQueryTextLength', () => {
     const analyzeShort = createAnalyzer(normalizeOptions({ maxQueryTextLength: 10 }));
     const ctx = analyzeShort(

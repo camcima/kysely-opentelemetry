@@ -5,3 +5,5 @@ coverage/
 test-report*.junit.xml
 docs/superpowers/
 docs/reviews/
+.deepsec/
+findings/

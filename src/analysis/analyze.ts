@@ -99,21 +99,22 @@ function analyzeSql(
   Object.freeze(tables);
   const summary = summarize(operation, tables);
 
+  let fullFingerprint = '';
   let fingerprint = '';
   let hash = '';
   let sanitizationError = false;
   if (options.fingerprint || options.hash || options.queryText === 'sanitized') {
     try {
-      const full = fingerprintSql(sql, lexicon);
+      fullFingerprint = fingerprintSql(sql, lexicon);
       // Hash the UNtruncated fingerprint: truncating first would collide two
       // distinct queries that share a prefix under a small maxQueryTextLength.
-      if (options.hash) hash = hashFingerprint(full);
-      fingerprint = full.slice(0, options.maxQueryTextLength);
+      if (options.hash) hash = hashFingerprint(fullFingerprint);
+      fingerprint = fullFingerprint.slice(0, options.maxQueryTextLength);
     } catch {
       sanitizationError = true;
     }
   }
-  const text = buildQueryText(sql, fingerprint, sanitizationError, options);
+  const text = buildQueryText(sql, fullFingerprint, sanitizationError, options);
 
   return {
     operation,
@@ -129,23 +130,23 @@ function analyzeSql(
   };
 }
 
+/** Truncates only AFTER the redact hook: a hook handed pre-truncated text
+ *  could miss a value cut in half at the boundary and emit its prefix. */
 function buildQueryText(
   sql: string,
-  fingerprint: string,
+  fullFingerprint: string,
   sanitizationError: boolean,
   options: NormalizedOptions,
 ): string | undefined {
   if (options.queryText === 'off') return undefined;
   if (options.queryText === 'sanitized' && sanitizationError) return undefined;
-  let text =
-    options.queryText === 'sanitized' ? fingerprint : sql.slice(0, options.maxQueryTextLength);
+  let text = options.queryText === 'sanitized' ? fullFingerprint : sql;
   if (options.redact) {
     try {
-      // Re-truncate: a redact hook may lengthen the string past the cap.
-      text = options.redact(text).slice(0, options.maxQueryTextLength);
+      text = options.redact(text);
     } catch {
       return undefined; // safe failure: omit rather than risk leaking
     }
   }
-  return text;
+  return text.slice(0, options.maxQueryTextLength);
 }

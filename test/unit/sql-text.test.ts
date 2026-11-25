@@ -103,11 +103,11 @@ describe('maskSqlText', () => {
 
 /**
  * maskSqlTextUnquotingIdentifiers feeds the raw-SQL table scanner: comments
- * and string literals are blanked exactly like maskSqlText, but a quoted
- * identifier that holds one simple name is replaced by that bare name, so
- * `FROM "orders"` stays extractable. Anything else in an identifier region
+ * are blanked exactly like maskSqlText, but a quoted identifier that holds
+ * one simple name is replaced by that bare name, so `FROM "orders"` stays
+ * extractable. String literals, and anything else in an identifier region
  * (spaces, punctuation, or a table-clause keyword that could fabricate a
- * FROM/JOIN anchor) is replaced by a `?` sentinel — deliberately NOT a
+ * FROM/JOIN anchor), are replaced by a `?` sentinel — deliberately NOT a
  * space, so a scanner's \s+ can never bridge the gap to the next token.
  */
 describe('maskSqlTextUnquotingIdentifiers', () => {
@@ -130,6 +130,16 @@ describe('maskSqlTextUnquotingIdentifiers', () => {
     expect(out).toContain('SELECT a FROM t');
     expect(out).not.toContain('secret');
     expect(out).not.toContain('fake');
+  });
+
+  it('replaces a string literal with a non-space sentinel so \\s+ cannot bridge it', () => {
+    // MySQL "orders" is a string: FROM must not reach the WHERE after it.
+    expect(
+      maskSqlTextUnquotingIdentifiers('SELECT * FROM "orders" WHERE id = 1', LEXICONS.mysql),
+    ).toBe('SELECT * FROM ? WHERE id = 1');
+    expect(maskSqlTextUnquotingIdentifiers("SELECT * FROM 'x' WHERE id = 1")).toBe(
+      'SELECT * FROM ? WHERE id = 1',
+    );
   });
 
   it('blanks non-simple identifier content instead of emitting fragments', () => {
