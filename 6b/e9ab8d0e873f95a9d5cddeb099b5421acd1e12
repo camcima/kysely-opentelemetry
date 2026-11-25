@@ -1,0 +1,31 @@
+scripts/readme-screenshots/grafana/kysely-dashboard.json
+  s_b25f1a43e7e0be::t_7cf0dcf1bc4f28 1-561
+scripts/readme-screenshots/README.md
+  s_b25f1a43e7e0be::t_2af517cf0a5488 1-56
+scripts/readme-screenshots/demo.ts
+  s_b25f1a43e7e0be::t_4f0c554e4cedcc 1-292
+scripts/readme-screenshots/package.json
+  s_b25f1a43e7e0be::t_21cfc0ec96d191 1-25
+scripts/readme-screenshots/pnpm-lock.yaml
+  s_b25f1a43e7e0be::t_e68f477150fc28 1-678
+scripts/readme-screenshots/docker-compose.yml
+  s_b25f1a43e7e0be::t_c03853449dcfd6 1-22
+scripts/readme-screenshots/grafana/dashboards.yaml
+  s_b25f1a43e7e0be::t_336965d04e717d 1-8
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "6be9ab8d0e873f95a9d5cddeb099b5421acd1e12",
+  "prompts": {},
+  "sessions": {
+    "s_b25f1a43e7e0be": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "66d32ff8-dfa2-4d59-8bfe-92363e484463",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Carlos Cima <camcima@users.noreply.github.com>"
+    }
+  }
+}
